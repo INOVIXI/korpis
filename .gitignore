@@ -1,0 +1,13 @@
+# editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# os
+.DS_Store
+Thumbs.db
+
+# working files
+*.draft.md
+/scratch/

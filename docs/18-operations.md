@@ -171,6 +171,20 @@ take a Postgres advisory lock and are brief.
 Avoiding leader election here is deliberate. Leader election is where distributed systems acquire
 their most interesting failure modes, and this workload does not need it.
 
+**A connection pooler changes how the job queue wakes up.**
+
+> External review, finding R14. Recorded in §16 of `23-walkthroughs.md`.
+
+§6 of `03-state.md` wakes workers with `LISTEN`/`NOTIFY`, which does not survive PgBouncer in
+transaction-pooling mode: a `LISTEN` issued on a pooled connection is not attached to the session
+that later receives the notification. Nothing breaks loudly. The queue silently falls back to
+polling, latency goes from milliseconds to the poll interval, and nobody connects the two events.
+
+So it is stated rather than discovered: with a transaction-mode pooler in the path, workers poll,
+the interval is configurable, and `korpis-server` **detects the pooling mode at startup and logs
+which wake-up path it is using**. Session-mode pooling keeps notifications. Either is supported;
+being unsure which one is running is not.
+
 **Postgres.** Korpis does not implement database high availability. Patroni, a managed service, or
 accepting single-instance risk are all valid; Korpis states the requirement, synchronous durability
 for the transaction that writes an `Effect`, and leaves the rest to tools built for it.
@@ -259,7 +273,7 @@ reason; the consequence for this section is that a restore ends with agents that
 than with an operator re-enrolling every node by hand in the middle of the incident the restore was
 fixing.
 
-The restore procedure has **two** steps that cannot be skipped, and §7 of `03-state.md` makes both
+The restore procedure has **two** steps that cannot be skipped, and §8 of `03-state.md` makes both
 mandatory rather than documented. They are the same principle applied to the two kinds of authority
 the control plane hands out: *a restored control plane must invalidate authority it can no longer
 account for.*

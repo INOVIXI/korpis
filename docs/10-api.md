@@ -107,6 +107,20 @@ version number is a fact about a build and never a statement about capability. A
 
 ---
 
+**A field's default value never changes.**
+
+> External review, finding R10. Recorded in §16 of `23-walkthroughs.md`.
+
+Intent bodies are stored with defaults emitted (§3.1 of `03-state.md`), which freezes the meaning
+of rows already written. This rule defends the same property from the other side, for every
+consumer that did not read that section: a client generated against `v1` and a control plane
+running a later version must agree on what an absent field meant, and they only do if the answer
+never moved.
+
+Changing a default is therefore a breaking change requiring a major version, and the cheaper move
+is always available: add a new field with the new default and deprecate the old one on the schedule
+§5 of `19-governance.md` already defines.
+
 ## 5. Actions
 
 Grants name actions (§3 of `08-identity.md`), so the action vocabulary is part of the API contract

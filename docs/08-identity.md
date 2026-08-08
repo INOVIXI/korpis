@@ -142,6 +142,25 @@ issued ──use──▶ issued
 Revocation cascades transitively and takes effect immediately in the control plane. The one place
 it is not instantaneous is a cached capability token at the edge, bounded and quantified in §6.
 
+**Revocation is derived, not written to the subtree.**
+
+> External review, finding R4.
+
+"Cascades transitively and immediately" describes two different implementations and the document
+implied both. Writing `revoked_at` onto every descendant makes a deep subtree either one enormous
+transaction or an asynchronous job, and if it is asynchronous then "immediately" is false.
+
+So the cascade is **derived**: `revoked_at` is written on the grant that was revoked and nowhere
+else, and validity is computed by walking the chain, which authorization already does at use time
+("re-checked at use time, because a parent may have been revoked in between", §3 of `01-model.md`).
+Revocation is therefore genuinely instantaneous and costs one row.
+
+The audit consequence has to be stated, because it is the price. "When did this grant stop being
+valid" is a computed answer rather than a stored one, so the `Effect` log records the **revocation
+that caused it**, and a query about a descendant resolves through the chain to that event. An
+`Effect` still names the grant it acted under (§3.3 of `01-model.md`); what it does not do is claim
+that grant was independently revoked when its parent was.
+
 `suspended` exists because one root of a grant tree is not a row in this database. A grant rooted
 in an `ExternalIdentity` depends on an assertion Korpis re-checks rather than owns, and §5.1 gives
 that re-check an interval and a cascade. Suspension is reversible and revocation is not, which is
@@ -224,6 +243,22 @@ A binding that fails re-verification enters `unverified`, which **suspends every
 and cascades exactly as revocation does**. Suspension rather than revocation, because an identity
 provider being unreachable must not silently destroy a delegation tree: `unverified` is visible,
 dated, and reversible, and it fails closed for authority while failing loudly for the operator.
+
+**A structural ceiling, so that re-verification is not the only defence.**
+
+> External review, finding R1, which reached the same defect from the algebra rather than from a
+> trace and proposed one mechanism this section did not have.
+
+Re-verification bounds how long a stale membership can authorize, and it depends on an interval
+someone configures. A second bound that no configuration can widen is cheap here: **a grant whose
+chain contains a set-subject anywhere carries a hard expiry ceiling**, independent of what its
+issuer asked for. A moderator with a ninety-day role grant can mint a child that outlives their
+membership by at most the ceiling, not by ninety days.
+
+The two mechanisms fail differently, which is why both are worth having. Re-verification catches a
+membership that ended while the delegation tree stays intact. The ceiling catches the case where
+re-verification itself is misconfigured, unreachable, or set too long, and it does so without
+asking anyone to have got a number right.
 
 `reverify_interval` is the honest analogue of token lifetime. It is the bound on how long authority
 outlives its source, it is stated rather than convenient, and it applies to OIDC and SAML equally,
@@ -368,10 +403,87 @@ Mitigations, all of them partial:
 
 - The token is in the **fragment**, never the path or query, fragments are not sent to servers and
   do not appear in access logs or `Referer` headers.
-- Short expiry and use caps are defaults, not options.
-- Optional binding to the IP of first use.
-- High-risk actions are excluded from link-form grants by the same default that governs Discord
-  roles (§5.1).
+- Short expiry and use caps are defaults, not options. A use cap is redeemed online (§6.2), which
+  is a real cost and is stated where the link is created rather than discovered during an outage.
+- High-risk actions are excluded from link-form grants by the same default that governs chat roles
+  (§5.2).
+
+**Not bound to the IP of first use.**
+
+> External review, finding R14.
+
+An earlier draft offered this as a hardening option. It does not survive contact with the people
+the feature exists for: a moderator opening a link on a phone is behind CGNAT or moving between
+cell towers, and their address changes minutes after first use. An option that breaks the intended
+user in ordinary conditions is not a security control, it is a support ticket that also teaches
+people to turn security controls off.
+
+Online redemption (§6.2) is the mechanism that actually bounds a leaked link, and it bounds it by a
+number the issuer chose rather than by a network property nobody controls. `source_cidr` remains
+available for the case it was designed for, a link issued to a known fixed network.
+
+---
+
+### 6.2 `max_uses` is redeemed online, and says so
+
+> External review, finding R2. Recorded in §16 of `23-walkthroughs.md`.
+
+An agent verifying a token offline can check two of a grant's three limiting conditions. A
+signature is self-contained. An expiry is a number compared against a clock. **A use counter is
+neither**: it is shared mutable state, and counting it needs either a central point of redemption
+or coordination between every agent that might see the token. This design specified neither, which
+made `max_uses` a limit the interface displayed and nothing enforced, in the document that tells
+every other document not to do that (K-3, P4).
+
+So the rule is stated rather than assumed:
+
+| Condition | Checked where | Survives a control plane outage |
+|---|---|---|
+| signature and grant chain | agent, offline | **yes** |
+| `expires_at`, `not_before` | agent, offline | **yes** |
+| `source_cidr` | agent, offline | **yes** |
+| `requires_mfa`, `requires_approval_by` | gateway, online | no |
+| **`max_uses`** | **gateway, online, redeemed atomically** | **no** |
+
+A token carrying `max_uses` is redeemed at the gateway, which decrements the counter in the same
+transaction that authorizes the call. It is therefore **not** usable while the control plane is
+unreachable, and a token without `max_uses` is. That is the trade and it is the right way round:
+the feature that needs a counter is the one that gives up offline operation, rather than every
+token giving up a guarantee to support one condition.
+
+The cost is stated where a user meets it. A share link with a use limit is described in the
+interface as requiring the control plane; the console token of §6, which carries no use limit,
+keeps its documented survival window. Break-glass tokens (§6, below) never carry `max_uses` at all,
+because a credential whose entire purpose is working during an outage cannot depend on a counter
+that does not.
+
+**Issuing is also a race, and it is the same race quota had.**
+
+> External review, finding R3.
+
+`child.max_uses ≤ parent.remaining_uses` (§3.2) reads `remaining_uses`, which is the one mutable
+field on an otherwise immutable object. Two concurrent attenuations of a parent with three uses
+left each observe three and each mint a child with three. This is Finding 1 of `23-walkthroughs.md`
+exactly, on the authority side instead of the capacity side, and it takes the same answer:
+**`remaining_uses` participates in a compare-and-swap on the parent grant row, in the transaction
+that inserts the child.** A losing writer gets `CONFLICT` and re-attenuates against the new figure.
+
+### 6.3 Revoking one thing without revoking everything
+
+> External review, finding R13.
+
+§6 says a break-glass token is "revocable by rotating the control plane key epoch". That is true
+and it is a sledgehammer: rotating the key invalidates every token in the system, so killing one
+pre-issued credential logs out every console session in the fleet.
+
+Break-glass tokens are few and long-lived, which is exactly the shape a revocation list handles
+well. Agents hold a **signed revocation list of token IDs**, distributed on the same channel as the
+public key and cached with the same rules. It is checked offline, so it costs nothing that matters,
+and it is bounded because only long-lived tokens are ever listed. Short-lived tokens continue to
+rely on expiry, because a list entry that outlives its token is waste.
+
+Key rotation remains the answer to *"the key may be compromised"* and to control-plane restore
+(§6). It stops being the answer to *"this one credential should stop working"*.
 
 ---
 

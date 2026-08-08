@@ -106,6 +106,12 @@ okumaya değer olması için fiilen ne yapıldığı:
   iptal edilmiş yetki, her gözlem sağlıklı derken trafiği kesebilen bir kenar ve kaldırıldığında
   hiçbir şeye yayılmayan bir sohbet rolü de bunların arasında. Hepsi düzeltildi ve inceleme
   dokümanı onları sessizce yamamak yerine kayda geçirdi.
+- **İkinci bir okuma dikişlere değil tanımlara saldırdı.** Farklı bir modelle yapılan bağımsız bir
+  inceleme, her dokümanın kendi cebrini hedef aldı: bu koşulu ne, hangi bilgiyle değerlendiriyor ve
+  değerlendirebilir mi. On dokuz şey buldu, on altısı gerçekti; aralarında kimlik dokümanının
+  gösterdiği ama hiçbir doğrulayıcının uygulayamayacağı bir limit de vardı. Hepsi yamandı ve
+  [`23-walkthroughs.md`](./docs/23-walkthroughs.md) §16 hem her birini hem de denetimden geçemeyen
+  iki iddiayı kayda geçirdi.
 - **Düzeltmeler görünür bırakıldı.** [`01-model.md`](./docs/01-model.md) §2, bu depodaki daha eski
   bir önerinin neden yanlış olduğunun kaydıdır. Hiçbir şey baştan belliymiş gibi sunulmuyor.
 

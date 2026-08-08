@@ -65,7 +65,7 @@ This is where the address is either tied to a machine or freed from it.
 | `ingress` | name-based, shared address | **yes** | a proxy | HTTP/HTTPS, TLS services |
 | `dedicated_ip` | an IP belonging to the workload | **yes**, if the IP is routable to any node | an IP, plus BGP or a provider API | games needing a whole IP, IP reputation |
 | `overlay_only` | reachable by other workloads only | yes | an overlay | databases, internal services |
-| `none` | none | none |, | bots, batch jobs |
+| `none` | none | none | nothing | bots, batch jobs |
 
 `node_port` is what Pterodactyl offers, and it is kept because for a single-node install it is
 correct and free. It is not the default, and the UI states its consequence, the address changes if
@@ -95,6 +95,27 @@ their server list.**
 
 This is the thing that makes migration ordinary rather than an event, and it is why
 `05-scheduling.md` could treat draining a node as routine.
+
+**The default data path adds no hop.**
+
+> External review, finding R18. Recorded in §16 of `23-walkthroughs.md`.
+
+This market's users feel five milliseconds, so an exposure mode that puts a box in front of every
+UDP packet would be the wrong default no matter what it buys. It does not:
+
+- **An edge is co-resident by default.** For a single-machine install and for any node that is its
+  own edge, forwarding is a kernel path on the same machine (nftables DNAT, or XDP/eBPF where the
+  volume justifies it), which is a table lookup rather than a hop. §4 already said this; what it
+  did not say is that it is the **default** rather than an option.
+- **A remote edge is an operator's explicit choice**, taken to get an address that outlives the
+  machine, and its cost is one hop, which is stated in the interface at the point the choice is
+  made rather than inferred later from latency complaints.
+- **Migration does not need a permanent hop.** The window where an address must reach two places is
+  the cutover, so a co-resident edge forwards to the destination for the drain interval and stops.
+  Paying a hop permanently to make a rare event cheaper is the wrong trade for this workload.
+
+`node_port` remains available for the operator who wants the address on the node and accepts that
+migration changes it, which is Pterodactyl's behaviour offered deliberately rather than inherited.
 
 **An edge holds a lease, because everything else that forwards traffic does.**
 

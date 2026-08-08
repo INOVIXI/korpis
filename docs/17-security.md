@@ -192,7 +192,7 @@ behaviour:
 
 **A compromised node.** The blast radius is that node's tenants, plus whatever its credentials
 reached, which §7 has deliberately made small. Recovery: revoke the node key, and **increment the
-lease epoch**. §4.5 of `02-architecture.md` and §7 of `03-state.md` make epochs monotonic and
+lease epoch**. §4.5 of `02-architecture.md` and §8 of `03-state.md` make epochs monotonic and
 fencing mandatory, so a compromised agent that keeps running cannot reacquire ownership of
 anything, and cannot write an observation the control plane will accept. Workloads are rescheduled
 elsewhere from their intents, which are unaffected. The node is not trusted to clean itself up; it
@@ -231,7 +231,7 @@ what legitimate traffic looks like.
 
 **A compromised control plane.** Total. There is no partial story here and inventing one would be
 dishonest: the control plane holds the authority to issue grants. What can be bounded is
-reconstruction, §7 of `03-state.md` requires restore to fence with a monotonic `max_issued_epoch`
+reconstruction, §8 of `03-state.md` requires restore to fence with a monotonic `max_issued_epoch`
 watermark and to rotate the signing key, so a restored control plane can neither issue an epoch a
 live agent would accept as current nor honour a token it has no record of, which is what prevents a
 compromise or a restore from turning into two authorities.

@@ -120,6 +120,29 @@ Three details make it hold across versions:
 The compatibility rules of §4 of `10-api.md` therefore cover the database as well as the wire,
 which is the property being bought: one schema, one set of rules, one place a mistake can be made.
 
+
+**Defaults are written, not omitted.**
+
+> External review, finding R10. Recorded in §16 of `23-walkthroughs.md`.
+
+Proto3 canonical JSON omits fields that hold their default value. Combined with "rows are never
+rewritten, so nothing reinterprets them", that produces exactly the outcome the rule was written to
+prevent: a stored body that does not contain a field is not recording *the default at the time it
+was written*, it is recording *whatever the default is when someone reads it*. Change a default in
+2028 and every row from 2026 silently changes meaning while remaining byte-identical.
+
+So intent bodies are serialized **with defaults emitted**. Rows are larger and their meaning is
+frozen, which is the trade this whole section exists to make.
+
+The rule that would otherwise be needed instead, "a field's default may never change", is added to
+§4 of `10-api.md` as well, because it costs nothing and defends the same property from the other
+side.
+
+**Integers are strings, and the index has to know that.** Canonical JSON encodes `int64` and
+`uint64` as strings. Expression indexes over those fields, and any range query on them, need an
+explicit cast, and a cast that is not in the index definition is a sequential scan. The fields this
+actually affects are few and known (byte counts, epochs, versions), so they are indexed with the
+cast written into the index rather than discovered from a slow query log.
 ### 3.2 Conflicting declarations are detected, not merged
 
 Two clients declaring intents for one workload at the same time is normal: a web user and a Discord
@@ -172,8 +195,29 @@ CREATE TABLE effect (id           uuid NOT NULL,
 REVOKE UPDATE, DELETE ON effect FROM korpis_app;
 ```
 
-- **Partitioned by time.** Monthly partitions. Detaching an old partition is instant; deleting
-  millions of rows is not.
+- **Partitioned by time, on the ingest clock.** Monthly partitions. Detaching an old partition is
+  instant; deleting millions of rows is not.
+
+> External review, finding R8. Recorded in §16 of `23-walkthroughs.md`.
+
+`at` is the time the control plane **ingested** the effect, from one clock, and it is what the
+primary key and the partition boundary use. An agent's own reading of when the thing happened is a
+separate column, `occurred_at`, and it is never a key of anything.
+
+The first version of this schema did not draw that line, and a partition key fed by node clocks has
+two failure modes that are not theoretical. A node whose clock is minutes fast writes effects into
+a partition that does not exist yet or into the wrong month. And causal order inverts in the log
+that exists to preserve it: `stop decided 12:00:05` above `container stopped 11:59:58`, in a table
+whose entire purpose is being the record nobody can argue with.
+
+Both readings are kept, because both are true and they answer different questions. `at` orders the
+log and is monotonic within the control plane. `occurred_at` is what the node believed, it is what
+a latency investigation needs, and a large gap between the two is itself a finding worth an alert.
+
+```sql
+  at            timestamptz NOT NULL,   -- ingest clock, PK and partition key
+  occurred_at   timestamptz,            -- the agent's reading, never a key
+```
 - **Archived, never deleted.** Detached partitions are exported to object storage in a documented
   open format and remain queryable through an explicit archive path. Retention policy governs what
   is *online*, not what exists.
@@ -273,7 +317,53 @@ architecture diagram looks more serious with them.
 
 ---
 
-## 7. Backup and restore of the control plane
+## 7. One plan at a time, and how the other one is stopped
+
+> External review, finding R6. Recorded in §16 of `23-walkthroughs.md`.
+
+Making the diff a first-class object (Bet 3) buys dry-run, approval, and truthful audit. It also
+buys an obligation that a level-triggered reconciler never has, and this design had not paid it.
+
+Kubernetes has no Plan, so a controller simply looks at the newest desired state on every pass and
+the question does not arise. Korpis persists the plan, which means a plan can be **half applied**
+when a newer intent arrives. `Plan.status` covers `superseded`, but supersession as written is
+about the moment of computation: a plan is invalid if reality moved under it. It says nothing about
+a plan that is `applying`, whose agent is on step two of five, when someone clicks stop.
+
+The compare-and-swap that guards the mutation is on `intent_version`. It is not on "no plan is
+currently applying", so the new intent commits, a second plan is computed, and it is computed
+against a reality that is *half of the first plan*, which is a state the model has no way to name.
+
+Two things close it, and both are needed:
+
+**Plans are serialized per workload.** A workload has at most one plan in `applying` at a time,
+enforced by the store rather than by convention. A plan proposed while another is applying is
+computed and persisted as normal, so it is inspectable, and it enters `queued`.
+
+**A queued plan preempts rather than waits, when it can.** Waiting for a five-step migration to
+finish before honouring a stop button is not acceptable, so `plan.cancel` is part of the agent
+protocol:
+
+```
+control plane ──plan.cancel(plan_id, at_step_boundary)──▶ agent
+agent finishes the step in flight, does not begin the next
+        ──effect: plan cancelled at step N──▶ control plane
+plan.status = cancelled, workload state = partial, resources named
+```
+
+Cancellation lands **on a step boundary**, never inside one, which is what makes it cheap: §3.1 of
+`05-scheduling.md` already requires every step to be ordered, idempotent, and resumable from the
+last completed one, and a cancelled plan is a partial plan the model can already express. The next
+plan is computed against that partial state exactly as it would be against a failed one.
+
+`plan.cancel` is a request, not a command. A step in flight completes, because interrupting a
+half-written volume is how a system acquires states nobody declared. The cost is a bounded wait
+equal to one step, which is stated, rather than an unbounded wait equal to one plan, which was the
+alternative nobody had chosen on purpose.
+
+---
+
+## 8. Backup and restore of the control plane
 
 The store is the only stateful component in the control plane, so backing up Korpis is backing up
 one PostgreSQL database. Continuous WAL archiving with point-in-time recovery.
@@ -286,14 +376,55 @@ older epoch is fenced, the restored control plane would consider every running a
 those agents consider themselves authoritative. That is precisely the split brain leases exist to
 prevent, reintroduced by the recovery procedure.
 
-**Restore therefore includes a mandatory epoch fence: every lease epoch in the restored store is
-advanced past any epoch that could plausibly have been issued before the failure.** The store
-records a `max_issued_epoch` watermark, monotonic and never reset, so the restore has a concrete
-number to advance beyond rather than a guess.
+**Restore therefore includes a mandatory epoch fence.** Getting the arithmetic of that fence right
+took a correction, and the wrong version is worth leaving visible because it is an easy mistake to
+repeat.
 
-Agents reconnect, discover their epochs are stale, stop the affected workloads or request reissue
-according to their `on_expiry` policy, and the system converges from a known state instead of a
-contested one. Slower than pretending nothing happened; correct.
+> External review, finding R11. Recorded in §16 of `23-walkthroughs.md`.
+
+The first version of this section said the store records a `max_issued_epoch` watermark "so the
+restore has a concrete number to advance beyond". **That watermark is in the database being
+restored**, so it holds the value as of the backup, and every epoch issued between the backup and
+the failure is by definition larger than it. Advancing past a stale watermark does not clear the
+epochs that actually exist in the field. The sentence described an intention, not a mechanism.
+
+Two mechanisms do work, and the restore uses both:
+
+1. **A bounded issue rate makes the watermark usable again.** Epochs are issued at a rate the
+   control plane caps and records, so `W_backup + rate × max_backup_age` is a real upper bound on
+   what could have been issued, and the restore advances past that. The cap is the reason the bound
+   exists; without it the arithmetic has no ceiling.
+2. **Reconnecting agents raise the floor.** The restored control plane refuses to issue for a
+   configured settling window, during which every agent that reconnects presents the epoch it
+   holds, and the control plane jumps past the maximum it saw. This closes the case where 1's bound
+   was computed against a wrong backup age.
+
+The adversarial corner of 2 is that an agent reports the epoch, so a compromised or broken agent
+can report an enormous one and exhaust the epoch space. **Epochs are signed by the control plane
+that issued them**, and an agent presenting an epoch it cannot prove was issued is fenced rather
+than believed. An epoch is authority, and this design does not take an unverified claim of
+authority from anywhere else either.
+
+Mechanism 1 alone is safe but conservative. Mechanism 2 alone is exact but depends on agents
+appearing. Together the fence is correct when every agent reconnects and still correct when none
+does.
+
+Agents reconnect, discover their epochs are stale, and **freeze mutations while leaving processes
+running**, then request reissue according to their `on_expiry` policy.
+
+> External review, finding R12.
+
+Fail-static rather than fail-stop, and the default matters because the alternative is a recovery
+procedure that stops tenants' workloads. Fencing exists to prevent two authorities mutating one
+workload. A fenced agent already refuses mutations, so killing the processes it is supervising
+prevents no inconsistency that refusing mutations has not already prevented. It only converts a
+control-plane incident into a tenant-visible outage, which is the opposite of what the restore is
+for. `on_expiry: keep_running` is the default for exactly this reason (§4.5 of
+`02-architecture.md`), and `stop` remains available for the workloads whose correctness genuinely
+depends on single ownership of a shared resource.
+
+The system converges from a known state instead of a contested one. Slower than pretending nothing
+happened; correct.
 
 **And restore rotates the signing key, for the same reason.**
 
@@ -326,7 +457,7 @@ request.
 
 ---
 
-## 8. Scale expectations
+## 9. Scale expectations
 
 Stated so they can be measured against, and so the point at which this design must be revisited is
 known in advance rather than discovered in production.
@@ -337,7 +468,7 @@ known in advance rather than discovered in production.
 | Workloads | 1 – 50,000 | 100,000 |
 | Intents/second | < 10 | 100 |
 | Effects/day | millions | tens of millions |
-| Observations/second | thousands |, handled outside the transactional store by design |
+| Observations/second | thousands | handled outside the transactional store by design |
 
 The load that scales fastest is telemetry, and §5 keeps it out of PostgreSQL entirely. The
 transactional store scales with *decisions*, not with *workloads*, and decisions are made by humans
@@ -346,7 +477,7 @@ touches generates approximately zero transactional load.
 
 ---
 
-## 9. Open questions
+## 10. Open questions
 
 1. **Which time-series engine?** Embedded (a local columnar store, keeping the single-binary
    promise) versus external (Prometheus/VictoriaMetrics/TimescaleDB, better tooling, another

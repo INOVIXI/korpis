@@ -99,6 +99,12 @@ actually done to make it worth reading:
   revoked authority that could resurrect after a restore, an edge that could stop forwarding while
   every observation reported healthy, and a chat role whose removal cascaded to nothing. All are
   fixed, and the walkthrough documents them rather than quietly patching them.
+- **A second reading attacked the definitions rather than the seams.** An independent review by a
+  different model went after the algebra inside each document: what evaluates this condition, with
+  what information, and can it. It found nineteen things, sixteen of them real, including a limit
+  the identity document displayed that no verifier could enforce. All are patched, and §16 of
+  [`23-walkthroughs.md`](./docs/23-walkthroughs.md) records every one along with the two claims
+  that did not survive checking.
 - **Corrections are left visible.** §2 of [`01-model.md`](./docs/01-model.md) is a record of an
   earlier proposal in this repository being wrong and why. Nothing is presented as having been
   obvious.

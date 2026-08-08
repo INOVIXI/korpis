@@ -36,7 +36,7 @@ the design exists to keep separate.
 | Runtime drivers | the runtime ecosystem's language | small each | independently |
 | Web client | **TypeScript**, static bundle | medium | constantly |
 | CLI | **Go**, one static binary | small | often |
-| Database | **PostgreSQL** | none |, |
+| Database | **PostgreSQL** | none | none |
 
 ---
 

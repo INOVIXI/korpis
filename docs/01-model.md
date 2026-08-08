@@ -55,7 +55,7 @@ What this buys, concretely:
 | Minecraft server | persistent | interactive | game/25565 | data | query: minecraft | oci / container |
 | Next.js app | persistent | logs | http/3000 + ingress | none | http: /healthz | oci / container |
 | PostgreSQL | persistent | logs | tcp/5432 | data | tcp + query | oci / container |
-| Discord bot | persistent | logs | none |, | heartbeat | oci / container |
+| Discord bot | persistent | logs | none | none | heartbeat | oci / container |
 | Nightly backup | scheduled | logs | none | archive | exit: 0 | oci / container |
 | Customer VPS | persistent | interactive (serial) | tcp/22, ip | root disk | agent or tcp | kvm / vm |
 | Untrusted plugin build | task | logs | none | workspace | exit: 0 | firecracker / microvm |
@@ -186,7 +186,7 @@ Conditions
   source_cidr   []CIDR?
   requires_mfa  bool
   requires_approval_by  Scope?   // this grant can propose, not apply, see §3.3
-  max_uses      int?
+  max_uses      int?             // redeemed online, see §6.2 of 08-identity.md
 ```
 
 **Invariants**
@@ -303,7 +303,6 @@ Intent
   recipe        RecipeRef      name + version + digest (see 09-recipes.md)
   lifecycle     persistent | task | scheduled
   schedule      CronExpr?      required iff lifecycle = scheduled
-  state         running | stopped   // ignored for task and scheduled
   console       none | logs | interactive
   runtime       RuntimeSpec    driver + isolation tier + driver-specific config
   resources     ResourceSpec   cpu, memory, disk, iops, bandwidth
@@ -323,6 +322,37 @@ Intent
 
 Because intents are immutable and chained, the full history of a workload's declared state is a
 linked list, and rollback is "declare intent N again" rather than an inverse operation (P9).
+
+#### Power is declared separately from configuration
+
+> External review, finding R7. Recorded in §16 of `23-walkthroughs.md`.
+
+An earlier version of this schema carried `state: running | stopped` inside the intent body. It is
+the obvious place for it and it is the wrong place, for a reason that only shows up under this
+market's actual usage: **start and stop are the most frequent operations there are**, and every one
+of them would copy the entire body into a new immutable row.
+
+Two things break. The intent chain stops being a configuration history and becomes a power log, so
+"roll back to intent 41" is no longer a meaningful configuration target when the only difference
+between 41 and 42 may be that one is stopped. And the retention problem of open question 2 in
+`03-state.md`, where an autoscaler produces millions of intents, gets worse on its own.
+
+```
+Power
+  workload      WorkloadID
+  desired       running | stopped
+  version       int            monotonic, its own sequence
+  set_by        Subject
+  set_at        Timestamp
+```
+
+Power is versioned, attributed, and reconciled exactly like everything else, so nothing about P2 or
+P5 changes: stopping a workload still produces a `Plan` and an `Effect`, and still names the grant
+that authorized it. What changes is that it does not produce an `Intent`.
+
+The test of the split is P9's promise. Re-declaring intent 41 now restores a configuration and says
+nothing about whether the workload should be running, which is what a rollback should mean.
+Anything else conflates "what this workload is" with "whether it is on right now".
 
 #### Observation
 
@@ -392,7 +422,34 @@ Step
 - Plans expire. A stale plan is not an approvable plan.
 - A plan containing a step marked `reversible: false`, deleting a volume, releasing an IP, always
   requires explicit approval. A plan whose steps are all non-disruptive is auto-approved by default
-  policy.
+  policy, and **`disruptive` is declared, never inferred** (below).
+
+**Where `disruptive` comes from**
+
+> External review, finding R9. Recorded in §16 of `23-walkthroughs.md`.
+
+"Auto-approved if non-disruptive" is a policy engine hidden inside an adjective, and the adjective
+is not a property of the step. `stop` is disruptive to a game server with forty players on it and
+routine for a stateless web service behind a load balancer. If nothing says where the answer comes
+from, auto-approval becomes a quiet way around P5's human-approval promise, decided by whoever
+implemented the classifier.
+
+So the classification has one source and one override chain, both in the Plan and both visible:
+
+| Layer | Declares | Wins over |
+|---|---|---|
+| the action vocabulary | a floor: `delete_volume` is disruptive and irreversible, always | nothing, this cannot be relaxed |
+| the driver | how a tier changes it: `stop` on a `vm` costs a boot, on a `process` it does not | the floor, upward only |
+| the recipe | what this software costs to interrupt (§5 of `09-recipes.md`) | the driver, upward only |
+| the operator, per workload | a deliberate override, recorded | everything, and it is an `Effect` |
+
+Every layer may only make a step **more** disruptive than the layer beneath it, never less. That
+asymmetry is the whole safety property: the vocabulary's floor cannot be argued away by a recipe
+author or a driver, and an operator who wants a quieter approval flow has to say so on the record.
+
+`Impact.downtime_estimate` and `Impact.data_at_risk` follow the same rule. Where they cannot be
+computed they are reported as `unknown` rather than zero, and a plan whose impact is `unknown` is
+**not** auto-approvable. P4 applied to the one number that decides whether a human sees the change.
 
 **Plans govern intent changes, not drift correction**
 

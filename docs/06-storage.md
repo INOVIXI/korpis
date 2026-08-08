@@ -58,7 +58,7 @@ StorageClass
 | **btrfs** | ✓ atomic | ✓ `send -p` | ✓ qgroups | ✓ | ✓ | recommended default |
 | **LVM-thin + XFS** | ✓ | ✗ block-level only | ✓ project quota | ✓ | ✗ | acceptable |
 | **XFS / ext4 project quota** | ✗ | ✗ | ✓ | ✗ | ✗ | supported, degraded |
-| **Network (NFS/iSCSI/Ceph)** | backend-dependent | backend-dependent | backend-dependent | none |, | required for `shared_access` |
+| **Network (NFS/iSCSI/Ceph)** | backend-dependent | backend-dependent | backend-dependent | none | none | required for `shared_access` |
 
 The scheduler reads these. A workload whose backup policy requires incremental backup will not be
 placed on an `ext4_project` node, because the class cannot deliver it, surfaced at scheduling time
@@ -118,6 +118,36 @@ io.weight                             share of leftover capacity
 spinning disk cause iowait spikes that degrade every server on the node. In Korpis the backup
 worker runs in its own cgroup with a low `io.weight` and explicit ceilings, so it consumes only
 capacity tenants are not using. Backup never competes with the workloads it is protecting.
+
+---
+
+### 3.1 A volume means two different things, and the difference is visible
+
+> External review, finding R16. Recorded in §16 of `23-walkthroughs.md`.
+
+Everything above this line describes a volume as a directory on a filesystem the host controls.
+That is true for `process` and `container` and false for `microvm` and `vm`, where the volume is a
+block device the guest owns and formats. The driver declares which it is (`volume_semantics` in
+§4.1 of `04-runtimes.md`), and the two contracts differ in ways a user will meet:
+
+| | `filesystem` | `block_device` |
+|---|---|---|
+| Bound | `refquota`, qgroup, or project quota | the device's size |
+| Exceeding it | `EDQUOT` in the write path, immediately | `ENOSPC` **inside the guest** |
+| Who reports usage | the host, exactly | the guest, if it is asked; the host sees allocated blocks |
+| Inodes | a real limit, and a real exhaustion mode | not a host concept at all |
+| Resize down | possible within the filesystem | requires the guest to shrink first, often not possible |
+| Single-file restore | the manifest is a tree the host can read | the host has an image; reading files inside it needs the guest's filesystem |
+
+None of this is smoothed over. A `microvm` workload's disk usage is reported as **allocated**, and
+labelled as such, rather than being presented as the same number a container reports, because it is
+not the same number. P4 costs a column in the interface here and buys not having to explain later
+why a customer's "20 GB used" meant two different things depending on a field they never set.
+
+The single-file restore of §5.4 is the sharpest case: under `block_device` it needs the guest's
+filesystem to be one the restore tooling can read, so the driver declares which image formats and
+filesystems it can traverse, and a volume it cannot traverse offers whole-image restore only,
+stated at backup time rather than discovered at restore time.
 
 ---
 

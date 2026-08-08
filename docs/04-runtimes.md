@@ -96,15 +96,61 @@ Capabilities
   runtime_snapshot     bool               capture execution state, not just disk
   live_migrate         bool
   gpu                  []GPUMode          none | passthrough | mediated | timeslice
+  devices              []DeviceClass      gpu | usb | pci | tpm | serial, per tier
   rootfs_sources       []SourceKind       oci_image | directory | disk_image | iso
   network_modes        []NetworkMode      veth | tap | host | none
+  enforcement          map[ResourceKind]EnforcementDecl
+  volume_semantics     VolumeSemantics    filesystem | block_device
   config_schema        JSONSchema         driver-specific configuration
+
+EnforcementDecl
+  enforced      bool
+  mechanism     text        "cgroup v2 memory.max", "Windows job object", "none"
+  granularity   text        what the mechanism actually bounds, where it differs
 ```
 
 The control plane **asks** and never assumes, following Nomad's task driver interface. A version
 number is not a capability statement: two builds of the same driver on different kernels have
 different capabilities, and inferring from a version is how a scheduler places a workload on a node
 that cannot run it.
+
+### The three fields that stop the interface from lying
+
+> External review, findings R15, R16 and R17. Recorded in §16 of `23-walkthroughs.md`.
+
+`enforcement`, `volume_semantics`, and `devices` are additions, and all three exist because "one
+`ResourceSpec`, every driver" is a claim that is false in three specific places. K-3 says a limit
+that is not kernel-enforced is not displayed, and K-9 says the interface expresses Windows from the
+first version. Those two are only simultaneously true if the interface can say **which limits this
+driver can actually hold**.
+
+**`enforcement`, because Windows has no cgroups.** Job objects bound memory and CPU differently.
+NTFS quota is per user, not per directory tree, so it does not express "this volume gets 20 GB".
+The kernel-level equivalents for IOPS and egress are partial. A Windows driver therefore declares
+memory and CPU as enforced by job objects, declares disk quota as `enforced: false`, and the
+scheduler refuses a workload that asks for a limit the driver cannot hold, while the interface
+**does not display** the ones it cannot enforce. That is K-3 working as designed rather than K-3
+quietly suspended for one platform, and it is the honest version of the Windows column §2 admits it
+lacks.
+
+**`volume_semantics`, because a VM's volume is a block device.** Under `process` and `container`, a
+volume is a directory on a filesystem the host controls, quota is `refquota` or a project quota,
+exceeding it returns `EDQUOT` in the write path, and inodes are a thing that can run out. Under
+`microvm` and `vm`, the volume is a zvol or a raw image the guest owns. The host cannot apply a
+filesystem quota inside it; the bound is the device size, the guest sees `ENOSPC`, and the host has
+no concept of the guest's inodes at all. Same `VolumeSpec`, two different contracts, and P4
+requires that the difference reach the user rather than being smoothed over. §3 of `06-storage.md`
+carries what each one means.
+
+This also sharpens Rule D of `20-roadmap.md`. The second driver is the test of the interface, and
+what it is testing is not process supervision, which is easy; it is this, where the storage
+abstraction genuinely does not survive contact with a hypervisor.
+
+**`devices`, per tier, because Firecracker has no PCI passthrough.** Bet 2 lists GPU workloads
+among the segments microVMs open, and Firecracker's minimal device model does not do passthrough;
+that path is `qemu` with VFIO. Without devices in the capability declaration, the scheduler accepts
+`microvm + gpu`, places it, and the failure surfaces at apply time. "The control plane asks and
+never assumes" has to cover devices for the same reason it covers everything else in this list.
 
 `config_schema` is the honest part of the abstraction. A VM needs a kernel, a bootloader, and
 cloud-init; a container needs none of those. Core does not model that difference, the driver

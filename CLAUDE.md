@@ -130,6 +130,15 @@ document they touch, looking for the step where no document is holding the ball.
 have produced twenty-three defects. When a change touches more than one document, add or update a
 trace.
 
+**Traces and algebra review are different instruments, and a document needs both.** A trace
+confirms that every step has an owner. It does not confirm that a step is possible. §16 of
+`23-walkthroughs.md` records an external review that found sixteen defects the traces could not,
+every one of them a document asserting a property its own definitions cannot support. So when a
+change adds a field, a condition, or a limit, ask the algebra question of it directly: **what
+evaluates this, where, and with what information?** The answer has to name a component that
+actually holds that information. "The verifier checks it" is not an answer if the verifier is
+offline.
+
 Pick the next trace by **measuring coverage, not by intuition**. Count how many times each document
 is cited by the existing traces; the second set of seven was chosen because `05-scheduling.md` had
 been crossed seventeen times and `13-surface-cli.md` not once, and it found more defects than the

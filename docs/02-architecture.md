@@ -192,8 +192,9 @@ Lease
 ```
 
 The control plane issues exactly one valid lease per workload at any time. The epoch increments on
-every issue. An agent presenting an older epoch is fenced: its writes are rejected and it is told
-to stop.
+every issue. An agent presenting an older epoch is fenced **statically**: its writes are rejected,
+the workloads it supervises keep running unless their own `on_expiry` says otherwise (finding R12,
+§8 of `03-state.md`), and it is told to stop.
 
 This is what Pterodactyl lacks, and it is why its transfer failures deadlock. When a transfer is
 interrupted, both nodes may believe they own the server, the panel cannot express that state, and
@@ -257,6 +258,47 @@ another component.
 
 The Planner being pure is deliberate: it makes dry-run free, makes plans testable without a running
 cluster, and prevents the class of bug where computing a plan has side effects.
+
+### 5.1 What "resolves and evaluates grants" costs
+
+> External review, finding R5. Recorded in §16 of `23-walkthroughs.md`.
+
+One table row is not a design. Authorization here is a search for a permitting chain, and the
+search is not small: a subject may hold grants directly and through N external identities, each
+chain is d links deep, each link's validity is derived rather than stored (§6.3 of
+`08-identity.md`), and a selector scope has to be evaluated against the current workload set on top
+of that. Worst case is O(N × d) reads plus selector resolution, **per request**, and Bet 3 puts an
+authorization in front of every plan computation, which is every click.
+
+Caching is the obvious answer and it collides with the promise directly above it: revocation is
+immediate. A cache with no invalidation design turns "immediate" into "eventually, by TTL", which
+is the same class of claim this project refuses everywhere else.
+
+So the closure is materialized and invalidated by event, not by clock:
+
+| | |
+|---|---|
+| **What is materialized** | `subject → (action, scope, conditions)` closure, per subject, derived from the chains |
+| **What invalidates it** | a grant issued, revoked, expired, or suspended anywhere in the subtree; a binding changing state (§5.1 of `08-identity.md`); a selector's membership changing |
+| **How the event travels** | the same job queue that carries everything else (§6 of `03-state.md`), so invalidation is transactional with the revocation that caused it |
+| **What happens on a miss** | full chain evaluation, which is the correct answer and is what a cold gateway always does |
+| **What is never cached** | `max_uses` redemption (§6.2 of `08-identity.md`), `requires_mfa`, `requires_approval_by` |
+
+Invalidation being transactional with revocation is the load-bearing part. The revoking transaction
+writes the revocation and enqueues the invalidation together, so there is no window in which the
+revocation is committed and the cache still permits. A gateway that has not yet processed an
+invalidation is behind the store, and the same fencing discipline used for leases applies: the
+closure carries the store's version, and a gateway serving a stale closure against a newer store
+refuses rather than guesses.
+
+Selector scopes are the expensive case and they were already flagged as dangerous for a different
+reason (§3.4 of `08-identity.md`, the set changes after the grant is issued). Both problems have
+one answer: a selector grant's membership is materialized alongside the closure, so a workload
+gaining a label is an invalidation event rather than a silent widening nobody evaluated.
+
+The gateway is stateless and horizontally scaled with no leader (§5 of `18-operations.md`), so this
+is a throughput cost rather than a bottleneck. It is stated because a design that puts one
+authorization on the path of every operation owes a number, and "it evaluates grants" was not one.
 
 ---
 

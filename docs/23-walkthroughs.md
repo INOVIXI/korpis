@@ -20,6 +20,9 @@ trace is to find the step where nobody is holding the ball.
 the documents they belong to, the table in §15 says where each landed. Each cost a paragraph to fix
 here. Finding them in month nine would have cost a rewrite.
 
+§16 records a separate external review that attacked the documents' internal algebra rather than
+the seams between them, and found sixteen more.
+
 The first seven follow one workload through its life: created, migrated, orphaned by a dead node,
 delegated, attacked, restored, upgraded. That is one axis, and after they were written the coverage
 was measurably lopsided: `05-scheduling.md` was crossed seventeen times and `13-surface-cli.md` not
@@ -228,10 +231,10 @@ a policy choice with real product consequences, not something to settle inside a
 
 **Trace**: each attempt, and what stops it.
 
-| Attempt | Stopped by |
-|---|---|
+| Attempt | Stopped by | Governed by |
+|---|---|---|
 | `../../etc/shadow` through the file API | `openat2(RESOLVE_BENEATH)` + Landlock; the string is never a decision | `17-security.md` §4 |
-| symlink race in an upload | same, the kernel resolves or it does not | |
+| symlink race in an upload | same, the kernel resolves or it does not | `17-security.md` §4 |
 | fork bomb | cgroup `pids.max`, no reservation, no way to disable | `05-scheduling.md` §5.2 |
 | a million empty files | inode quota | `06-storage.md` §3 |
 | 50 MB/s of log output | stream rate limit, drop with gap marker, never blocks the workload, counts against their own quota | `14-streams.md` §4, §5 |
@@ -267,7 +270,7 @@ honestly.
 | # | Step | Governed by |
 |---|---|---|
 | 1 | Postgres, signing keys, and the epoch watermark restored | `18-operations.md` §6 |
-| 2 | **Epoch watermark advanced past every epoch that could have been issued** | `03-state.md` §7 |
+| 2 | **Epoch watermark advanced past every epoch that could have been issued** | `03-state.md` §8 |
 | 3 | Control plane starts; agents reconnect | `02-architecture.md` §4 |
 | 4 | Each presents its intent-set digest; most match; deltas for the rest | `10-api.md` §9 |
 | 5 | Workloads never stopped, they were never dependent on the control plane | `02-architecture.md` §4.6 |
@@ -293,7 +296,7 @@ re-authenticates. The cost is a visible, bounded interruption during a disaster 
 already knows about; the alternative is silent authority with no record.
 
 Key rotation therefore joins epoch advancement as an **unskippable restore step**, and the token
-lifetimes of §6 of `08-identity.md` bound how long the disruption lasts. → patch `03-state.md` §7,
+lifetimes of §6 of `08-identity.md` bound how long the disruption lasts. → patch `03-state.md` §8,
 `08-identity.md` §6, `18-operations.md` §6
 
 ---
@@ -699,7 +702,7 @@ the same mechanism", and that is the price of having made core and extensions th
 | 6 | Quota inheritance says neither allocation nor usage, decides Bet 4 | §4 | `05-scheduling.md` §5.1 |
 | 7 | Who approves an extension inside a delegated organization | §4 | `16-extensions.md` §4.1 |
 | 8 | Egress enforced by the party being contained | §5 | `17-security.md` §9.1 |
-| 9 | Capability tokens outlive a restored database, revoked grants resurrect | §6 | `03-state.md` §7, `08-identity.md` §6, `18-operations.md` §6 |
+| 9 | Capability tokens outlive a restored database, revoked grants resurrect | §6 | `03-state.md` §8, `08-identity.md` §6, `18-operations.md` §6 |
 | 10 | A gap and a late sample are two records for one interval | §8 | `15-observability.md` §2 |
 | 11 | No metering period is ever closed, so an invoice has no defined input | §8 | `15-observability.md` §2 |
 | 12 | The agent's metering buffer has no stated bound | §8 | `15-observability.md` §2 |
@@ -729,3 +732,82 @@ two hundred workloads down while every observation reports healthy.
 All six were found by the same method, following one concrete story across a boundary that two
 documents each believed the other was holding. None of them is subtle in hindsight, which is the
 point: they were invisible per document and obvious per trace.
+
+---
+
+## 16. An external review, and what it found
+
+The fourteen traces above are one method: follow a concrete story until it crosses a boundary
+nobody owns. In August 2026 the specification was also read by a different model with a different
+method, which attacked the **algebra** inside each document rather than the seams between them. It
+found nineteen things. Sixteen were real and are patched; one had been closed hours earlier by
+Finding 19 above and the reviewer could not see it; two were already partly answered.
+
+Recording it here, in full, because §2 of `01-model.md` set the rule that corrections stay visible,
+and because the split between what the two methods caught is the most useful thing in this
+document.
+
+| # | Finding | Verdict | Patched into |
+|---|---|---|---|
+| R1 | Set-subject grants: membership lives in no link of the chain, so children outlive it | **already closed**, and complemented | `08-identity.md` §5.1 |
+| R2 | `max_uses` cannot be enforced by an offline verifier, so it was a displayed limit nothing held | **real, worst of the set** | `08-identity.md` §6.2 |
+| R3 | `remaining_uses` is racy at issue time | real | `08-identity.md` §6.2 |
+| R4 | Cascade revocation: derived or materialized was never chosen | real | `08-identity.md` §6.3 |
+| R5 | Per-request authorization cost, and cache invalidation vs immediate revocation | real | `02-architecture.md` §5.1 |
+| R6 | Preempting a plan that is already applying | **real** | `03-state.md` §7 |
+| R7 | Power state inside the intent body turns config history into a power log | **real** | `01-model.md` §3.2 |
+| R8 | Effect PK and partition key fed by agent clocks | real | `03-state.md` §4 |
+| R9 | Auto-approval hides a policy engine inside the word "non-disruptive" | real | `01-model.md` §3.3 |
+| R10 | Proto3 canonical JSON omits defaults, inverting the immutability claim | **real** | `03-state.md` §3.1, `10-api.md` §4 |
+| R11 | The epoch fence advances past a watermark that is itself stale | **real** | `03-state.md` §8 |
+| R12 | A fenced agent should fail static, not stop tenant workloads | real, default now stated | `03-state.md` §8, `02-architecture.md` §4.5 |
+| R13 | Revoking one break-glass token required rotating every key | real | `08-identity.md` §6.3 |
+| R14 | `LISTEN`/`NOTIFY` under a transaction-pooling PgBouncer; link IP binding vs CGNAT | real, both | `18-operations.md` §5, `08-identity.md` §6.1 |
+| R15 | K-3 and K-9 cannot both hold without per-driver enforcement declarations | **real** | `04-runtimes.md` §4.1 |
+| R16 | A volume is a filesystem under one tier and a block device under another | **real** | `04-runtimes.md` §4.1, `06-storage.md` §3.1 |
+| R17 | Devices are missing from the capability declaration; Firecracker has no passthrough | real | `04-runtimes.md` §4.1 |
+| R18 | Whether `stable` puts a hop in front of latency-sensitive traffic | partly answered, now explicit | `07-networking.md` §3.1 |
+| R19 | Service discovery is parked in a later phase than the requirement | real | `20-roadmap.md` §4 |
+
+### What the two methods caught, and why it differs
+
+The traces found **seam** defects: two documents each believing the other held something. The
+review found **algebra** defects: a single document asserting a property its own definitions cannot
+support. Almost nothing appears on both lists, and the one thing that does, R1 and Finding 19, was
+reached from opposite directions on the same day.
+
+R2 is the clearest example and the most uncomfortable. Trace §1 follows a share link with
+`max_uses: 3` three separate times and never asks who holds the counter. A trace verifies that each
+step has an owner; it does not verify that a step is *possible*. The document that lectures every
+other document about displaying only what is enforced was displaying a limit nothing enforced, and
+it took someone reading the definitions rather than following the story.
+
+R11 is the same shape. "Advance past the watermark" reads correctly in sequence and is
+arithmetically insufficient, and no trace catches that, because a trace confirms a step exists
+rather than checking its maths.
+
+The practical conclusion is written into `CLAUDE.md`: **traces and algebra review are different
+instruments and a document needs both.** A change that adds a field, a condition, or a limit gets
+the algebra question asked of it directly, which is "what evaluates this, where, and with what
+information", and the answer has to name a component that actually has that information.
+
+### What was not accepted
+
+Two claims did not survive checking, and saying so matters as much as the rest.
+
+The review argued that the gateway becomes "the single bottleneck" as well as the single
+authorization point. It is the single authorization point by design (P6), and that part stands. It
+is not a bottleneck: the gateway is stateless and horizontally scaled with no leader (§5 of
+`18-operations.md`), so the cost is throughput, not a serialization point. The invalidation gap
+underneath the argument was real and is fixed; the conclusion drawn from it was not.
+
+The review also suspected that `stable` puts a permanent hop in front of UDP game traffic. §4 of
+`07-networking.md` already had the edge co-resident with kernel-level forwarding for exactly this
+reason. What was genuinely missing was the word "default", which is now there, along with the
+statement that a remote edge is a deliberate choice with a stated cost.
+
+The reviewer flagged three findings as unverifiable because they could not read
+`02-architecture.md`, `17-security.md`, or this document. Checked against those files: R5 was
+correct, §5 did specify no caching design at all; R11 was correct; R18 was half correct as above.
+
+---

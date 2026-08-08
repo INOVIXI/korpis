@@ -125,6 +125,21 @@ egress.
 workloads, back them up, restore them, and read an honest console, with every displayed limit
 kernel-enforced (K-3).
 
+
+**Service discovery is named in Phase 1, not deferred to Phase 3.**
+
+> External review, finding R19. Recorded in §16 of `23-walkthroughs.md`.
+
+"A web app and its database" is a Phase 1 scenario, and one workload reaching another by a name
+that survives the other's migration is a core requirement rather than a networking detail. The
+*shape* of the answer touches the `Endpoint` model, the overlay, and the recipe schema at once, so
+deciding it late means changing an API schema that Phase 0 froze.
+
+What Phase 1 owes is the decision and the schema, which is small: whether dependencies are declared
+on the intent or discovered through a name service, and what a name resolves to while its target is
+between placements. What can wait for Phase 3 is the distributed implementation, because on one
+machine the answer is a local resolver and the semantics are the same.
+
 ### Phase 2: Multi-tenant, and the two bets that live there
 
 Organizations and recursive delegation. `GrantTemplate`. `IdentityBinding` and role-to-template
@@ -267,7 +282,7 @@ isolation table has no honest Windows column yet, that column gets written on th
 
 **Not needed, and worth saying because the reflex is to acquire them:** a Kubernetes cluster, a
 managed database, separate CI infrastructure, or a load-generation fleet. The scale assumptions in
-§8 of `03-state.md` are simulable on one box, and §1 of `18-operations.md` guarantees the
+§9 of `03-state.md` are simulable on one box, and §1 of `18-operations.md` guarantees the
 single-machine path stays real precisely so this stays true.
 
 ---

@@ -16,6 +16,12 @@ traces fourteen scenarios end to end specifically to find seams between document
 twenty-three. There are almost certainly more, and the fifteenth scenario nobody has traced is
 where they are.
 
+**Attack the definitions, not just the seams.** The other productive reading is to take a single
+document and ask of every field, condition, and limit in it: what evaluates this, where, and with
+what information? §16 of [`23-walkthroughs.md`](./docs/23-walkthroughs.md) is a review done that
+way and it found sixteen things fourteen traces had walked straight past, including a limit that
+was displayed and could not be enforced.
+
 **Correct the evidence.** [`docs/research/evidence.md`](./docs/research/evidence.md) makes factual
 claims about deployed software. If one is wrong, out of date, or unfair, please say so. Accuracy
 matters more there than being right, and if you maintain one of the projects discussed, your

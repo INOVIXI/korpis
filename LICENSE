@@ -3,20 +3,20 @@
 Copyright the Korpis contributors.
 
 Korpis is not licensed under a single licence. It is **split by layer**, deliberately, for the
-reasons argued in §5 of [`00-overview.md`](./00-overview.md) and restated in §2 of
-[`19-governance.md`](./19-governance.md).
+reasons argued in §5 of [`00-overview.md`](./docs/00-overview.md) and restated in §2 of
+[`19-governance.md`](./docs/19-governance.md).
 
 | Layer | Licence | Full text |
 |---|---|---|
 | Protocol definitions, client SDKs, recipe format, agent protocol | **Apache-2.0** | [`LICENSE-APACHE-2.0.txt`](./LICENSE-APACHE-2.0.txt) |
 | Control plane, node agent, web / CLI / chat clients | **AGPL-3.0-or-later** | [`LICENSE-AGPL-3.0.txt`](./LICENSE-AGPL-3.0.txt) |
-| Recipes, extensions, themes | Author's choice, proprietary included | — |
+| Recipes, extensions, themes | Author's choice, proprietary included | none |
 
-**Why the split.** Anything a third party must implement to interoperate — the wire protocol, the
-recipe format, the agent contract — is Apache-2.0, because Rule K-7 requires that someone else be
+**Why the split.** Anything a third party must implement to interoperate (the wire protocol, the
+recipe format, the agent contract) is Apache-2.0, because Rule K-7 requires that someone else be
 able to write a conforming agent without friction, and a copyleft protocol definition would defeat
-that. Apache-2.0 also carries an explicit patent grant. The platform itself is AGPL, because running
-it for other people is exactly the case AGPL exists to cover.
+that. Apache-2.0 also carries an explicit patent grant. The platform itself is AGPL, because
+running it for other people is exactly the case AGPL exists to cover.
 
 Extensions are separate processes speaking a published contract, not derivative works. They may be
 licensed however their authors wish, including proprietary and paid.
@@ -35,10 +35,10 @@ at any scale, ever.
 
 ## Contributions
 
-Contributions are accepted under the **Developer Certificate of Origin** — sign off with
-`git commit -s`. There is no contributor licence agreement and no copyright assignment, which keeps
-copyright distributed and makes a future relicence require broad consent from contributors. That is
-the point: it forecloses an open-core pivot structurally rather than by promise. See
+Contributions are accepted under the **Developer Certificate of Origin**. Sign off with `git commit
+-s`. There is no contributor licence agreement and no copyright assignment, which keeps copyright
+distributed and makes a future relicence require broad consent from contributors. That is the
+point: it forecloses an open-core pivot structurally rather than by promise. See
 [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ## Documentation
@@ -51,6 +51,6 @@ with, and built on freely. Attribution is the only condition.
 
 The Korpis name and marks are held separately from the code and are not licensed by the above.
 Unmodified builds may use them freely, and **commercial hosting under the Korpis name is explicitly
-permitted**. A modified distribution must be renamed — not to discourage forks, but so that a user
+permitted**. A modified distribution must be renamed. Not to discourage forks, but so that a user
 who downloads something called Korpis gets Korpis and security advisories refer to a knowable
-artifact. See §3 of [`19-governance.md`](./19-governance.md).
+artifact. See §3 of [`19-governance.md`](./docs/19-governance.md).

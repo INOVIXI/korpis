@@ -1,16 +1,15 @@
 # Scheduling, Placement, and Migration
 
-**Status:** design
-**Date:** 2026-08-07
-**Depends on:** [`01-model.md`](./01-model.md), [`02-architecture.md`](./02-architecture.md), [`04-runtimes.md`](./04-runtimes.md)
-**Resolves:** open questions 1, 4, 5, 7 of `01-model.md`; 4, 5 of `02-architecture.md`; 1 of `04-runtimes.md`
+**Status:** design **Date:** 2026-08-07 **Depends on:** [`01-model.md`](./01-model.md),
+[`02-architecture.md`](./02-architecture.md), [`04-runtimes.md`](./04-runtimes.md) **Resolves:**
+open questions 1, 4, 5, 7 of `01-model.md`; 4, 5 of `02-architecture.md`; 1 of `04-runtimes.md`
 
 ---
 
 ## 1. The gap being filled
 
 No product in this market schedules. Pterodactyl, Pelican, Calagopus, AMP, TCAdmin, Multicraft,
-WISP — in every one of them, a human picks which node a workload lands on, from a dropdown. Nodes
+WISP, in every one of them, a human picks which node a workload lands on, from a dropdown. Nodes
 and locations are buckets, not capacity.
 
 The consequences are the daily reality of running one of these: nodes drift into imbalance and
@@ -18,7 +17,7 @@ nobody notices until one is on fire; adding hardware does nothing until someone 
 things onto it; decommissioning hardware is a spreadsheet exercise; and the answer to "why is this
 customer's server on that node" is "because someone chose it in 2023."
 
-Agones — a Kubernetes extension aimed at a different audience entirely — is the only thing nearby
+Agones (a Kubernetes extension aimed at a different audience entirely) is the only thing nearby
 with an explicit placement policy. Its vocabulary is worth taking; its operational cost is not.
 
 ---
@@ -27,27 +26,27 @@ with an explicit placement policy. Its vocabulary is worth taking; its operation
 
 Three phases. The output is a `Placement`, a `Lease`, and a recorded explanation.
 
-### 2.1 Filter — which nodes *can* run this
+### 2.1 Filter: which nodes *can* run this
 
 A node survives the filter only if all hold:
 
 | Check | Source |
 |---|---|
 | offers a driver implementing the requested tier | `Node.drivers[].Capabilities.tiers` |
-| that driver's `Prepare` accepts the intent | §4.2 of `04-runtimes.md` — pure, so this is free to ask |
+| that driver's `Prepare` accepts the intent | §4.2 of `04-runtimes.md`, pure, so this is free to ask |
 | has unallocated capacity for every requested dimension | `Node.allocatable` minus `allocated` |
 | has every requested device available | §6 |
 | satisfies the intent's constraints | `PlacementSpec` label selectors |
 | the workload tolerates every taint | `Node.taints` |
-| is `ready` — not cordoned, draining, or unreachable | `Node.status` |
+| is `ready`: not cordoned, draining, or unreachable | `Node.status` |
 | the tenancy's quota admits it | §5 |
 
 `Prepare` in the filter is the part other systems lack. Because it is pure, the scheduler can ask
-every candidate driver "could you actually run this?" before committing to anything — so a workload
+every candidate driver "could you actually run this?" before committing to anything, so a workload
 requiring nested virtualization, a specific kernel feature, or an image format is rejected at
 scheduling time with a reason, rather than at start time as a mysterious failure.
 
-### 2.2 Score — of those, which is *best*
+### 2.2 Score: of those, which is *best*
 
 ```
 PlacementPolicy
@@ -61,8 +60,8 @@ PlacementPolicy
 
 | Strategy | Prefers | Right when |
 |---|---|---|
-| `packed` | the fullest node that still fits | elastic capacity — consolidation enables scale-down |
-| `distributed` | the emptiest node | fixed hardware — minimize blast radius |
+| `packed` | the fullest node that still fits | elastic capacity, consolidation enables scale-down |
+| `distributed` | the emptiest node | fixed hardware, minimize blast radius |
 | `balanced` | evens utilization | mixed, and the default |
 
 **Spread constraints** are orthogonal to strategy and operate on topology labels:
@@ -74,22 +73,23 @@ SpreadConstraint
   scope          project | organization | label_selector
 ```
 
-"No more than one of this customer's three database replicas per rack" is a spread constraint. It is
-independent of whether the cluster is packing or distributing, which is why it cannot be folded into
-the strategy — and why Pterodactyl's Location, a rigid two-level hierarchy, could never express it.
+"No more than one of this customer's three database replicas per rack" is a spread constraint. It
+is independent of whether the cluster is packing or distributing, which is why it cannot be folded
+into the strategy, and why Pterodactyl's Location, a rigid two-level hierarchy, could never express
+it.
 
 **Scoring signals**, weighted:
 
 | Signal | Prefers |
 |---|---|
 | utilization fit | per strategy |
-| content locality | a node that already has the recipe digest — start latency instead of a download (Rule K-15) |
+| content locality | a node that already has the recipe digest, start latency instead of a download (Rule K-15) |
 | volume locality | the node already holding this workload's volumes; usually decisive, since moving them is expensive |
 | device fit | not consuming a GPU node for a workload that needs none |
 | failure domain | per spread constraints |
-| recent churn | penalize nodes that recently lost workloads — they may be unhealthy |
+| recent churn | penalize nodes that recently lost workloads, they may be unhealthy |
 
-### 2.3 Bind — and record why
+### 2.3 Bind: and record why
 
 ```
 Placement
@@ -108,15 +108,15 @@ Explanation
 ```
 
 **Every placement decision is explainable after the fact.** "Why is this workload here" returns the
-full derivation: nineteen nodes considered, eleven lacked the `microvm` tier, four failed the memory
-check, one was cordoned, three were scored, this one won on volume locality.
+full derivation: nineteen nodes considered, eleven lacked the `microvm` tier, four failed the
+memory check, one was cordoned, three were scored, this one won on volume locality.
 
-This is not a debugging luxury. A scheduler nobody can interrogate is a scheduler nobody trusts, and
-an untrusted scheduler gets overridden manually until it might as well not exist. It also answers
-the support question that consumes hosting operators' time: *why is my server slow / here / not
-starting.*
+This is not a debugging luxury. A scheduler nobody can interrogate is a scheduler nobody trusts,
+and an untrusted scheduler gets overridden manually until it might as well not exist. It also
+answers the support question that consumes hosting operators' time: *why is my server slow / here /
+not starting.*
 
-Manual placement remains available — `bound_by: operator` — and is recorded as an override with the
+Manual placement remains available (`bound_by: operator`) and is recorded as an override with the
 reason the operator gives. The scheduler is not a wall.
 
 ---
@@ -126,8 +126,8 @@ reason the operator gives. The scheduler is not a wall.
 > Resolves open question 1 of `01-model.md` and 4 of `02-architecture.md`.
 
 A `Plan` covers exactly one workload. Draining a node touches every workload on it. Upgrading a
-recipe touches every workload using it. Approving two hundred plans individually is not a
-workflow anyone will use.
+recipe touches every workload using it. Approving two hundred plans individually is not a workflow
+anyone will use.
 
 ```
 Operation
@@ -150,12 +150,12 @@ OperationPolicy
 
 An Operation is a parent that owns many Plans. It carries one approval, one progress view, and one
 pause/resume/abort control. Individual plans still exist, are still computed against their own
-`from_intent`, and are still individually audited — nothing is lost, and the human approves the
+`from_intent`, and are still individually audited, nothing is lost, and the human approves the
 decision that was actually made ("drain node 7") rather than two hundred restatements of it.
 
 `max_unavailable` is the property that makes drain safe. Without it, draining a node means every
 workload on it migrating at once, which is a self-inflicted outage. With it, drain is a slow,
-observable, pausable process — which is what hardware maintenance actually requires.
+observable, pausable process, which is what hardware maintenance actually requires.
 
 Plans are generated **as the operation proceeds**, not all upfront. A plan computed two hours ago
 against a cluster that has since changed is a plan that will be `superseded` on arrival (§3.3 of
@@ -166,7 +166,7 @@ against a cluster that has since changed is a plan that will be `superseded` on 
 > Finding 2 of `23-walkthroughs.md`.
 
 An `Operation` composes plans. A `Plan` composes **steps**, and creating one workload is already
-three durable side effects — a volume with quota, an endpoint allocation, a runtime object. If the
+three durable side effects, a volume with quota, an endpoint allocation, a runtime object. If the
 volume is created and the endpoint allocation fails, something exists that nobody declared.
 
 P9 says no operation may leave a workload in a state the model cannot represent. That is the
@@ -175,9 +175,9 @@ requirement; these are its mechanics:
 - Steps are **ordered**, and the order is in the Plan, visible before it runs.
 - Every step is **idempotent**, so retrying a step whose outcome is unknown is always safe.
 - A failed plan is **resumable from the last completed step**, not restarted from the beginning.
-- Resources created by completed steps are **retained and named in the observation** — never orphaned
-  silently, never deleted on the assumption they are unwanted. This is the same treatment §4.4 of
-  `02-architecture.md` gives runtime objects an agent finds but did not create.
+- Resources created by completed steps are **retained and named in the observation**, never
+  orphaned silently, never deleted on the assumption they are unwanted. This is the same treatment
+  §4.4 of `02-architecture.md` gives runtime objects an agent finds but did not create.
 - The workload's state is one the model can express at every point: `partial`, with the failed step
   and its reason attached.
 
@@ -190,9 +190,9 @@ A plan that fails halfway is therefore a plan waiting to continue, which is what
 
 > Resolves open question 4 of `01-model.md`.
 
-A `scheduled` workload with a nightly cron produces a run every night. Those are not workloads —
-they are executions of one workload, and modelling them as workloads would multiply the object count
-by the number of nights and break every quota, grant, and name.
+A `scheduled` workload with a nightly cron produces a run every night. Those are not workloads;
+they are executions of one workload, and modelling them as workloads would multiply the object
+count by the number of nights and break every quota, grant, and name.
 
 ```
 Run
@@ -217,13 +217,13 @@ RunPolicy
   backoff          Duration
   timeout          Duration
   keep_successful  int      how many succeeded runs to retain
-  keep_failed      int      failures are retained longer — they are the ones anyone reads
+  keep_failed      int      failures are retained longer; they are the ones anyone reads
   catch_up         bool     run missed occurrences after downtime, or skip to now
 ```
 
 `concurrency` and `catch_up` are the two that cause incidents when they are implicit. If last
 night's backup is still running when tonight's is due: `forbid` skips it, `replace` kills and
-restarts, `allow` runs both — and running two backups against one volume simultaneously is how
+restarts, `allow` runs both, and running two backups against one volume simultaneously is how
 people lose data. If the control plane was down for six hours, `catch_up: true` fires six missed
 runs at once, which is occasionally right and usually a thundering herd.
 
@@ -249,7 +249,7 @@ QuotaEntry
   selector     LabelSelector?     // null = applies to everything
   reservations Resources          // guaranteed; sums against the parent
   limits       Resources          // ceiling; may exceed the parent, by declared ratio
-  version      int                // participates in the admission CAS — see below
+  version      int                // participates in the admission CAS, see below
 ```
 
 Admission requires an intent to fit within **every** matching entry. A tenant can hold a global cap
@@ -260,12 +260,13 @@ replaces the flat `Quota` struct of `01-model.md` §3.1.
 
 > Finding 6 of `23-walkthroughs.md`. This is the question Bet 4 actually turns on.
 
-A reseller holds 32 Gi, sells 16 Gi to one customer and 16 Gi to another, and wants to sell 16 Gi to
-a third — because customers use a fraction of what they buy, and overselling is not an abuse of this
-market, it is the ordinary commercial practice of every host Korpis is courting.
+A reseller holds 32 Gi, sells 16 Gi to one customer and 16 Gi to another, and wants to sell 16 Gi
+to a third, because customers use a fraction of what they buy, and overselling is not an abuse of
+this market; it is the ordinary commercial practice of every host Korpis is courting.
 
-Counting a child's quota against the parent **by allocation** forbids that. Counting it **by usage**
-means quota is not a guarantee, and P4 breaks the first time three customers get busy at once.
+Counting a child's quota against the parent **by allocation** forbids that. Counting it **by
+usage** means quota is not a guarantee, and P4 breaks the first time three customers get busy at
+once.
 
 So the same distinction §5.2 draws for a workload's resources is drawn for quota:
 
@@ -274,10 +275,10 @@ So the same distinction §5.2 draws for a workload's resources is drawn for quot
 | `reservations` | **sum, never oversubscribed** | what the reseller has actually guaranteed |
 | `limits` | may exceed, by a declared ratio | what the reseller has sold |
 
-A reseller sells 16 Gi limits backed by 4 Gi reservations and can see both totals — promised versus
-guaranteed — which is the spreadsheet they are keeping today, made into a first-class number. The
-overcommit ratio is per-dimension and memory defaults to off, exactly as §5.3 requires; a parent that
-has not enabled memory overcommit cannot oversell memory at all.
+A reseller sells 16 Gi limits backed by 4 Gi reservations and can see both totals, promised versus
+guaranteed, which is the spreadsheet they are keeping today, made into a first-class number. The
+overcommit ratio is per-dimension and memory defaults to off, exactly as §5.3 requires; a parent
+that has not enabled memory overcommit cannot oversell memory at all.
 
 Bet 4 survives, and it survives because the mechanism already existed one layer down and had simply
 never been applied to quota.
@@ -286,7 +287,7 @@ never been applied to quota.
 
 > Finding 1 of `23-walkthroughs.md`.
 
-`10-api.md` §6 protects a mutation with compare-and-swap on `expected_version` — of the *workload*.
+`10-api.md` §6 protects a mutation with compare-and-swap on `expected_version`, of the *workload*.
 Quota is a property of the organization, so that CAS protects the wrong object: two concurrent
 creates each observe 24 Gi of 32 Gi used, each pass admission, and both commit.
 
@@ -307,19 +308,19 @@ ResourceSpec
   disk      {reservation, limit}
   iops      {reservation, limit}
   bandwidth {reservation, limit}
-  pids      {limit}                  ceiling only — nobody reserves the right to fork
+  pids      {limit}                  ceiling only, nobody reserves the right to fork
 ```
 
-`pids` has no reservation because process slots are not a capacity anyone sells; it exists solely as
-a ceiling, and it is the one dimension with no graceful degradation on the way to it. A tenant
+`pids` has no reservation because process slots are not a capacity anyone sells; it exists solely
+as a ceiling, and it is the one dimension with no graceful degradation on the way to it. A tenant
 process that forks without bound exhausts the node's PID space and takes every other tenant on that
-node down with it — the cheapest denial of service available to anyone with a shell. It is enforced
+node down with it, the cheapest denial of service available to anyone with a shell. It is enforced
 by cgroup v2 `pids.max`, it has a default, and there is no configuration in which it is absent.
 
 - **Reservation** is guaranteed. It is subtracted from `Node.allocatable` and is never
   oversubscribed by anyone.
-- **Limit** is the ceiling. The gap between reservation and limit is burst, and burst is what may be
-  contended.
+- **Limit** is the ceiling. The gap between reservation and limit is burst, and burst is what may
+  be contended.
 
 This yields three service classes that map exactly onto what hosting providers already sell:
 
@@ -334,7 +335,7 @@ This yields three service classes that map exactly onto what hosting providers a
 | Dimension | Overcommit | Why |
 |---|---|---|
 | CPU | yes, configurable ratio | time-shared; contention degrades gradually |
-| Memory | **discouraged, off by default** | there is no gradual degradation — there is the OOM killer |
+| Memory | **discouraged, off by default** | there is no gradual degradation; there is the OOM killer |
 | Disk capacity | yes (thin provisioning) | but see below |
 | Disk IOPS | yes | time-shared |
 | Bandwidth | yes | time-shared |
@@ -342,14 +343,14 @@ This yields three service classes that map exactly onto what hosting providers a
 | Dedicated IP | no | exclusive by nature |
 
 Overcommit applies **only to the burst region**. `allocatable` for reservations is always physical
-capacity divided by one. A `guaranteed` workload is never oversubscribed, whatever the node's ratio
-— otherwise the word means nothing.
+capacity divided by one. A `guaranteed` workload is never oversubscribed, whatever the node's
+ratio, otherwise the word means nothing.
 
 Thin-provisioned disk carries a specific obligation under P4: a tenant told they have 100 GB must
-actually be able to write 100 GB. So a node whose thin provisioning is approaching physical exhaustion
-raises pressure, stops accepting placements, and alerts **before** any tenant hits a limit they were
-never told about. Selling capacity that does not exist and discovering it when a customer's write
-fails is the failure mode this exists to prevent.
+actually be able to write 100 GB. So a node whose thin provisioning is approaching physical
+exhaustion raises pressure, stops accepting placements, and alerts **before** any tenant hits a
+limit they were never told about. Selling capacity that does not exist and discovering it when a
+customer's write fails is the failure mode this exists to prevent.
 
 Every one of these is kernel-enforced and metered, or it is not offered (Rule K-3).
 
@@ -359,8 +360,8 @@ Every one of these is kernel-enforced and metered, or it is not offered (Rule K-
 
 > Resolves open question 1 of `04-runtimes.md`.
 
-A GPU is three things at once — a resource dimension, a placement constraint, and a driver
-capability — which is why it does not fit as a scalar like CPU. Generalizing beyond GPUs produces a
+A GPU is three things at once (a resource dimension, a placement constraint, and a driver
+capability) which is why it does not fit as a scalar like CPU. Generalizing beyond GPUs produces a
 cleaner model that also covers hardware hosting operators genuinely need: capture cards, licensing
 dongles, TPMs, high-precision clocks.
 
@@ -379,10 +380,10 @@ Intent.devices[]
   kind, count, selector, mode
 ```
 
-Devices are **discrete named objects**, not a scalar count. They participate in filtering (does this
-node have one), in quota (how many may this tenant hold), and in driver capability checks (does this
-driver support this mode). Passthrough is exclusive; mediated and timeslice are shared with declared
-partitioning.
+Devices are **discrete named objects**, not a scalar count. They participate in filtering (does
+this node have one), in quota (how many may this tenant hold), and in driver capability checks
+(does this driver support this mode). Passthrough is exclusive; mediated and timeslice are shared
+with declared partitioning.
 
 ---
 
@@ -390,9 +391,9 @@ partitioning.
 
 > Resolves open question 5 of `02-architecture.md`.
 
-The question was whether the agent may reject an assigned intent. Rejection is a decision, and §2 of
-`02-architecture.md` puts decisions in the control plane. But leaving an unsatisfiable intent to
-manifest as silent non-convergence is worse — it looks identical to slowness.
+The question was whether the agent may reject an assigned intent. Rejection is a decision, and §2
+of `02-architecture.md` puts decisions in the control plane. But leaving an unsatisfiable intent to
+manifest as silent non-convergence is worse, it looks identical to slowness.
 
 **Resolution: the agent does not reject. It reports a fact.**
 
@@ -404,9 +405,9 @@ Observation
   detail  = structured, from the driver's Prepare rejection
 ```
 
-An observation is the agent's own domain — it is reporting what it sees, which is that it cannot get
-there from here. The **scheduler** reads that observation and decides: reschedule elsewhere, surface
-it to an operator, or leave it pending if the condition is transient.
+An observation is the agent's own domain; it is reporting what it sees, which is that it cannot get
+there from here. The **scheduler** reads that observation and decides: reschedule elsewhere,
+surface it to an operator, or leave it pending if the condition is transient.
 
 The fact belongs to the agent. The decision belongs to the control plane. Nothing in §2 bends, and
 the failure is visible within one observation interval instead of a timeout.
@@ -430,7 +431,7 @@ prepare ─▶ replicate ─▶ quiesce ─▶ final_sync ─▶ verify ─▶ c
 | `quiesce` | stop the workload, or capture live state where `runtime_snapshot` exists | source restarts; migration abandoned |
 | `final_sync` | ship the last delta | source restarts; destination discarded |
 | `verify` | checksum the destination; confirm it can start | source restarts; destination discarded |
-| `cutover` | `LeaseRevoke(old_epoch)` then `LeaseGrant(new_epoch)` | atomic — one side holds a valid lease at every instant |
+| `cutover` | `LeaseRevoke(old_epoch)` then `LeaseGrant(new_epoch)` | atomic, one side holds a valid lease at every instant |
 | `release` | after a hold period, delete source data | source data still present; rollback available |
 
 Four invariants:
@@ -441,14 +442,14 @@ Four invariants:
    which two nodes are both authorized. This is the mechanism Pterodactyl lacks, and its absence is
    the direct cause of the deadlock class.
 3. **`release` holds.** Source data is retained for a configurable period after cutover. If the
-   destination fails to start in production — which is exactly when it will — rollback is
+   destination fails to start in production (which is exactly when it will), rollback is
    re-granting the source lease, not a restore from backup.
 4. **Every phase is idempotent and resumable.** A migration interrupted at any point is resumed or
    rolled back by an operator or by the operation, never repaired by hand.
 
 Symlinks, extended attributes, sparse files, ACLs, and hardlinks are part of the `verify` contract,
-not incidental. Pterodactyl's #5429 — symlinks silently not transferred, so the workload will not
-boot at the destination — is a verification failure, not a copy failure. Verification that only
+not incidental. Pterodactyl's #5429 (symlinks silently not transferred, so the workload will not
+boot at the destination) is a verification failure, not a copy failure. Verification that only
 checks file bytes will reproduce that bug exactly.
 
 **Streams migrate with the workload.**
@@ -456,19 +457,20 @@ checks file bytes will reproduce that bug exactly.
 > Finding 3 of `23-walkthroughs.md`.
 
 `14-streams.md` §1 argues that a console is evidence rather than a widget, and §4 puts its segment
-files on the node. A migration that moves the volume and leaves the console behind on a machine about
-to be decommissioned discards that evidence at exactly the moment it is most likely to be wanted.
+files on the node. A migration that moves the volume and leaves the console behind on a machine
+about to be decommissioned discards that evidence at exactly the moment it is most likely to be
+wanted.
 
 So stream segments travel in the same incremental transfer as the volume, in `replicate` and
 `final_sync`, and are covered by the `verify` contract like any other data.
 
 One extra thing crosses at `cutover`, alongside the lease epoch: **the stream's final offset**.
-Offsets are monotonic per stream and are the seek primitive (§2 of `14-streams.md`), so a destination
-that restarted numbering would break every reader's resume and silently change what a stored offset
-refers to. The destination continues the sequence from the watermark it is handed.
+Offsets are monotonic per stream and are the seek primitive (§2 of `14-streams.md`), so a
+destination that restarted numbering would break every reader's resume and silently change what a
+stored offset refers to. The destination continues the sequence from the watermark it is handed.
 
-Any range that could not be transferred is written as a **gap record** — the same marker used for
-drops under pressure — so a migrated console states what it lost rather than appearing complete.
+Any range that could not be transferred is written as a **gap record**, the same marker used for
+drops under pressure, so a migrated console states what it lost rather than appearing complete.
 
 ---
 
@@ -476,13 +478,13 @@ drops under pressure — so a migrated console states what it lost rather than a
 
 Korpis will not move a running workload to improve packing on its own.
 
-Migration is disruptive by definition — even at its best, it stops a process, and for a game server
+Migration is disruptive by definition, even at its best, it stops a process, and for a game server
 that means disconnecting players. A scheduler that optimizes utilization by moving customer
 workloads without being asked is a scheduler that causes outages nobody requested and nobody can
 predict.
 
-Rebalancing is an **Operation** (§3): an operator asks for it, sees a plan showing exactly what will
-move, where, and what it costs in disruption, and approves it — with `max_unavailable` and a
+Rebalancing is an **Operation** (§3): an operator asks for it, sees a plan showing exactly what
+will move, where, and what it costs in disruption, and approves it, with `max_unavailable` and a
 maintenance window. That is P5 and P9 applied to the one subsystem most tempted to violate them.
 
 The scheduler may **recommend**. It surfaces imbalance, identifies consolidation opportunities, and
@@ -492,9 +494,9 @@ estimates what a rebalance would achieve. It does not act.
 
 ## 10. Open questions
 
-1. **Preemption.** Should a `guaranteed` workload be able to evict a `best_effort` one to make room?
-   It is what makes scavenger capacity useful and it means a running workload can be killed by
-   somebody else's scheduling decision — which needs an explicit, visible contract with whoever
+1. **Preemption.** Should a `guaranteed` workload be able to evict a `best_effort` one to make
+   room? It is what makes scavenger capacity useful and it means a running workload can be killed
+   by somebody else's scheduling decision, which needs an explicit, visible contract with whoever
    bought best-effort capacity, not a silent behaviour. → here, once QoS classes are exercised
 2. **Node pool autoscaling.** Growing a cluster in response to pressure requires a provider
    interface (create a machine, install the agent, enrol it). That is close to "Korpis is not a
@@ -505,8 +507,9 @@ estimates what a rebalance would achieve. It does not act.
    knob with a documented default rather than something Korpis decides. → here
 4. **Scheduling latency at scale.** Filtering and scoring five hundred nodes per placement is fine;
    doing it for a thousand queued placements during a mass migration is not. Agones batches
-   allocation requests over ~500 ms specifically for this. Whether Korpis needs batching, or whether
-   its placement rate is low enough that it never will, is a measurement not yet taken. → here
+   allocation requests over ~500 ms specifically for this. Whether Korpis needs batching, or
+   whether its placement rate is low enough that it never will, is a measurement not yet taken. →
+   here
 5. **Cross-organization spread.** A provider may want a customer's workloads spread across failure
    domains without revealing which nodes hold whose workloads to that customer. Spread constraints
    as written are evaluated by the scheduler with full visibility, but the resulting `Explanation`

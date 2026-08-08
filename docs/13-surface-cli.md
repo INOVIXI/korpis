@@ -1,20 +1,19 @@
 # The CLI and Declarative Workflow
 
-**Status:** design
-**Date:** 2026-08-07
-**Depends on:** [`10-api.md`](./10-api.md), [`03-state.md`](./03-state.md), [`08-identity.md`](./08-identity.md)
-**Implements:** Principles P2, P5, P6
+**Status:** design **Date:** 2026-08-07 **Depends on:** [`10-api.md`](./10-api.md),
+[`03-state.md`](./03-state.md), [`08-identity.md`](./08-identity.md) **Implements:** Principles P2,
+P5, P6
 
 ---
 
 ## 1. The CLI is the reference client
 
 `korpis` is one binary, calls only the published API, and is the client against which P2 is
-mechanically enforced: **every API operation has a command, and no command has a private endpoint.**
-Coverage is checked in CI against the schema, so "the API can do something no client exposes" and
-"a client does something the API cannot" are both build failures rather than opinions.
+mechanically enforced: **every API operation has a command, and no command has a private
+endpoint.** Coverage is checked in CI against the schema, so "the API can do something no client
+exposes" and "a client does something the API cannot" are both build failures rather than opinions.
 
-The daemons — control plane and node agent — are separate binaries with their own operational
+The daemons (control plane and node agent) are separate binaries with their own operational
 surface, covered in `18-operations.md`. This document is about the client.
 
 ---
@@ -22,26 +21,26 @@ surface, covered in `18-operations.md`. This document is about the client.
 ## 2. Two ways to say the same thing
 
 ```
-korpis workload restart mc-survival        imperative — one object, right now
-korpis apply -f servers/                   declarative — a set of objects, converge
+korpis workload restart mc-survival        imperative: one object, right now
+korpis apply -f servers/                   declarative: a set of objects, converge
 ```
 
-Both produce an `Intent`. Both produce a `Plan`. Both appear in the same audit trail. The imperative
-form is a convenience over the declarative one, not a second path through the system, which is why
-the two cannot drift apart the way `kubectl edit` and a GitOps controller do.
+Both produce an `Intent`. Both produce a `Plan`. Both appear in the same audit trail. The
+imperative form is a convenience over the declarative one, not a second path through the system,
+which is why the two cannot drift apart the way `kubectl edit` and a GitOps controller do.
 
-Human output by default; `--json` emits **the API's own object shape**, not a CLI-specific rendering.
-Nothing exists in the JSON that a program calling the API directly would not receive, so a script
-that outgrows the CLI does not have to be rewritten to move to the SDK. Exit codes are meaningful and
-map to the error codes of §8 of `10-api.md` — `DENIED`, `CONFLICT`, and `UNSATISFIABLE` are
-distinguishable without parsing text.
+Human output by default; `--json` emits **the API's own object shape**, not a CLI-specific
+rendering. Nothing exists in the JSON that a program calling the API directly would not receive, so
+a script that outgrows the CLI does not have to be rewritten to move to the SDK. Exit codes are
+meaningful and map to the error codes of §8 of `10-api.md`, `DENIED`, `CONFLICT`, and
+`UNSATISFIABLE` are distinguishable without parsing text.
 
 ---
 
 ## 3. Declared files are intent bodies
 
-A declared file is the intent body. There is no wrapper, no `apiVersion`, no `kind` repeated in every
-document, no metadata block that exists to satisfy a machine:
+A declared file is the intent body. There is no wrapper, no `apiVersion`, no `kind` repeated in
+every document, no metadata block that exists to satisfy a machine:
 
 ```yaml
 # servers/mc-survival.yaml
@@ -66,8 +65,9 @@ config:
   difficulty: hard
 ```
 
-The file is validated against the recipe's config schema (§5 of `09-recipes.md`) **before** anything
-is sent, so a typo in a field name is a local error with a line number rather than a rejected request.
+The file is validated against the recipe's config schema (§5 of `09-recipes.md`) **before**
+anything is sent, so a typo in a field name is a local error with a line number rather than a
+rejected request.
 
 ---
 
@@ -79,7 +79,7 @@ korpis plan -f servers/
 
 This is the place the model pays for itself. `kubectl diff` computes a difference on the client and
 shows you a text comparison of two YAML documents; what the cluster will actually do remains a
-guess. Here, `plan` sends the declaration and receives the **real, persisted `Plan` object** — the
+guess. Here, `plan` sends the declaration and receives the **real, persisted `Plan` object**, the
 same object the web panel would show, computed by the same code that will execute it, including
 placement decisions, `Explanation`s, quota effects, and estimated unavailability.
 
@@ -115,13 +115,13 @@ korpis apply -f servers/ --set community-servers
 ```
 
 Objects created through a set are marked with it. An object that was in the set and is no longer in
-the files appears in the Plan as a deletion, enumerated by name — never summarized as "3 objects
-pruned" — and:
+the files appears in the Plan as a deletion, enumerated by name, never summarized as "3 objects
+pruned", and:
 
 - Deleting a workload is permitted by an ordinary apply.
 - **Deleting anything that holds data is not.** Volumes, snapshots, and backups are retained by
-  default and require `--delete-volumes` naming them explicitly. §5 of `06-storage.md` gives volumes
-  a `min_retention` floor, and the CLI cannot override it.
+  default and require `--delete-volumes` naming them explicitly. §5 of `06-storage.md` gives
+  volumes a `min_retention` floor, and the CLI cannot override it.
 - An object that never belonged to the set is never touched by it, so two sets cannot fight and a
   hand-created workload cannot be pruned by someone else's pipeline.
 
@@ -141,16 +141,16 @@ the behaviour is declared per set:
 | `advisory` (default) | the out-of-band change stands; the set is marked **drifted**, the drift is shown in the panel and in `korpis status`, and the next `plan` shows it as a change to be reconciled or adopted |
 | `strict` | the next apply reconciles it back, and the override that was discarded is recorded as an `Effect` with its author, so it is recoverable and attributable |
 
-Neither mode ever silently loses a human's emergency fix. `advisory` is the default because the 03:00
-fix is usually right, and a system that punishes people for fixing outages gets worked around within
-a month.
+Neither mode ever silently loses a human's emergency fix. `advisory` is the default because the
+03:00 fix is usually right, and a system that punishes people for fixing outages gets worked around
+within a month.
 
 ---
 
 ## 7. Authority, and why CI is the good case
 
-No long-lived admin key in a dotfile. Interactive login is a browser or device-code flow that yields
-a short-lived capability token held in the OS keyring.
+No long-lived admin key in a dotfile. Interactive login is a browser or device-code flow that
+yields a short-lived capability token held in the OS keyring.
 
 For automation, §3 of `08-identity.md` does something RBAC systems cannot:
 
@@ -162,8 +162,8 @@ korpis grant issue \
   --label   "github actions · korpis-community/servers"
 ```
 
-That token can deploy one project, expires on a date, appears in every `Effect` it authorizes, and —
-because grants only ever produce weaker children (P6) — **cannot be used to mint a broader one.** A
+That token can deploy one project, expires on a date, appears in every `Effect` it authorizes, and,
+because grants only ever produce weaker children (P6), **cannot be used to mint a broader one.** A
 leaked CI secret in this market is normally an admin key; here it is a bounded, dated, attributable
 delegation, and revoking it is revoking one row.
 
@@ -179,19 +179,20 @@ cannot become a name-disclosure oracle.
 korpis console mc-survival           attach to the durable stream; scrollback, seek, replay
 korpis logs mc-survival --since 1h   read without attaching
 korpis exec mc-survival -- /bin/sh   a session, subject to the runtime's isolation tier
-korpis files sync ./world w:mc-survival/world    delta transfer, direct to node
+korpis files sync./world w:mc-survival/world    delta transfer, direct to node
 korpis forward mc-survival:25565     local port through the overlay, no public exposure
 korpis watch -f servers/             stream plans and effects as they occur
 ```
 
 `files sync` transfers directly to the node with a short-lived scoped token rather than through the
-control plane, for the same reason web upload does (§8 of `11-surface-web.md`): a 40 GB world should
-not traverse the control plane, and the control plane should not be a data path.
+control plane, for the same reason web upload does (§8 of `11-surface-web.md`): a 40 GB world
+should not traverse the control plane, and the control plane should not be a data path.
 
-`exec` is not universally available and does not pretend to be. §4.3 of `04-runtimes.md` forbids the
-driver interface from assuming a shared filesystem or a POSIX process model, so `exec` exists where
-the driver declares the capability and returns `UNSATISFIABLE`, naming the reason, where it does not.
-The alternative — a command that silently means different things on different tiers — is worse.
+`exec` is not universally available and does not pretend to be. §4.3 of `04-runtimes.md` forbids
+the driver interface from assuming a shared filesystem or a POSIX process model, so `exec` exists
+where the driver declares the capability and returns `UNSATISFIABLE`, naming the reason, where it
+does not. The alternative (a command that silently means different things on different tiers) is
+worse.
 
 ---
 
@@ -201,13 +202,13 @@ The alternative — a command that silently means different things on different 
    explicit `--server` flags may be enough given that most operators run one control plane, but a
    consultant with ten clients is a real user. → here
 2. **Config file format and location.** Follows from the above. → here
-3. **CLI plugins.** `korpis-foo` on `PATH` becoming `korpis foo` is cheap and gives extensions a CLI
-   surface for free, but it also creates a path-hijacking vector worth thinking through. →
+3. **CLI plugins.** `korpis-foo` on `PATH` becoming `korpis foo` is cheap and gives extensions a
+   CLI surface for free, but it also creates a path-hijacking vector worth thinking through. →
    `16-extensions.md`
-4. **Templating in declared files.** Every declarative tool grows one — Helm, Kustomize, jsonnet —
-   and every one is regretted. Recipes already provide typed, schema-validated parameterization
-   (§5 of `09-recipes.md`), so the honest answer may be that the CLI needs none, and the files are
+4. **Templating in declared files.** Every declarative tool grows one. Helm, Kustomize, jsonnet,
+   and every one is regretted. Recipes already provide typed, schema-validated parameterization (§5
+   of `09-recipes.md`), so the honest answer may be that the CLI needs none, and the files are
    plain data. → `09-recipes.md`
-5. **Plan signing.** A Plan approved in a pull request and applied by a pipeline would ideally carry a
-   signature binding the approval to the exact plan. That is an approval-workflow feature and belongs
-   with governance rather than being invented here. → `19-governance.md`
+5. **Plan signing.** A Plan approved in a pull request and applied by a pipeline would ideally
+   carry a signature binding the approval to the exact plan. That is an approval-workflow feature
+   and belongs with governance rather than being invented here. → `19-governance.md`

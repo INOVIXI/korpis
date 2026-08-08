@@ -1,0 +1,119 @@
+# Korpis
+
+Design specification for a general-purpose workload platform. **There is no code in this
+repository.** The documents in `docs/` are the deliverable, and they are written to be implemented
+later.
+
+## Hard rules
+
+These are not preferences. Breaking one means the change is wrong.
+
+1. **Never use the em dash character.** Not in documents, commit messages, issue replies, or code
+   comments. Restructure the sentence instead: a comma for an aside, a colon before an explanation,
+   parentheses for a true parenthetical, a semicolon or a full stop between two independent
+   clauses. A hyphen surrounded by spaces is not an acceptable substitute. The check is in "Before
+   committing" below, and it must return nothing.
+2. **All documentation is in English.** Discussion may happen in any language; what lands in the
+   repo is English.
+3. **Never use the name "Blueprint".** It is Pterodactyl's de facto extension framework. Korpis
+   calls its package format `Recipe`. See §1 of `docs/09-recipes.md`.
+4. **Do not reduce scope.** If something looks too large, say so and argue it, but do not quietly
+   drop it, narrow it, or replace it with a simpler thing. Removing a decision from a document is a
+   change that needs the same justification as adding one.
+5. **Do not restrict hosts.** No per-workload, per-node, per-instance, per-account, or per-domain
+   limit, charge, or gate, at any scale. This is Principle P10 and it is load-bearing for several
+   other decisions.
+
+## Layout
+
+```
+README.md CONTRIBUTING.md SECURITY.md LICENSE   entry points, licensing, governance-facing docs
+docs/00-overview.md                              principles, non-goals, bets, evidence-derived rules
+docs/01-model.md .. docs/23-walkthroughs.md      the specification, in dependency order
+docs/research/evidence.md                        the citations every deviation is argued from
+```
+
+Numbering is dependency order, not importance. A document may depend on a lower number and should
+avoid depending on a higher one; where it must, the dependency is stated in the header block.
+
+## Which document owns which decision
+
+Put a decision where it will be settled, not where it is first mentioned. If you are unsure, these
+are the owners:
+
+| Subject | Document |
+|---|---|
+| nouns, fields, lifecycles | `01-model.md` |
+| control plane / data plane split, reconciliation | `02-architecture.md` |
+| Intent, Plan, Effect, storage engine, restore | `03-state.md` |
+| runtime driver interface and isolation tiers | `04-runtimes.md` |
+| placement, quota, cgroup limits, migration | `05-scheduling.md` |
+| volumes, snapshots, backup, dedup scope | `06-storage.md` |
+| endpoints, overlay, edge forwarding, egress | `07-networking.md` |
+| tenancy, grants, delegation, capability tokens | `08-identity.md` |
+| recipe format, install DSL, signing | `09-recipes.md` |
+| schema, transport, versioning, compatibility | `10-api.md` |
+| threat model, confinement, honest negatives | `17-security.md` |
+| install, upgrade, HA, disaster recovery | `18-operations.md` |
+| licence, versioning, LTS, maintainership | `19-governance.md` |
+| build order and what is deferred | `20-roadmap.md` |
+
+## How documents are written
+
+**State the decision, then the reasoning, then what it costs.** A section that gives only the
+decision is incomplete. A section that gives no cost is usually hiding one.
+
+**Cite the evidence.** When a claim rests on something that happened in another system, name it
+with an issue number, advisory ID, or documented behaviour, and add it to
+`docs/research/evidence.md` with a confidence tag. Sources that turn out to be marketing or SEO
+content are marked as such and are not relied on.
+
+**Say what a thing does not do.** The most valuable paragraphs in `17-security.md` and
+`18-operations.md` are the honest negatives. An isolation tier is described by what it fails to
+stop. A limit that is displayed but not enforced by the kernel must not be displayed at all (Rule
+K-3).
+
+**Record corrections in place.** When an earlier decision in this repository turns out to be wrong,
+leave the correction visible with its reasoning rather than rewriting history. §2 of `01-model.md`
+is the model for this.
+
+**Open questions are numbered, live in a final section, and name where they will be settled.** The
+form is a numbered item ending in `→ <document>` or `→ here`. A deferred decision with a name on it
+is honest; an undeclared one is a trap. Resolving one means editing it in place to say `Resolved in
+§N of X` and updating the owning document, not deleting it.
+
+**Cross-references are section-precise.** Write ``§5.2 of `05-scheduling.md` `` rather than "see
+the scheduling document". Verify the section number exists before writing it; guessing from memory
+is the single most common defect in this repo's history.
+
+**Line length under 100 characters.** Prefer prose to bullet fragments. Tables are for genuinely
+tabular material, not for prose that has been chopped up.
+
+## Before committing
+
+```bash
+grep -rnP '\x{2014}' .                # em dash: must return nothing
+grep -rn '01-landscape\|prior-art' .  # removed material, must return nothing
+```
+
+Also check: every relative link resolves, no duplicated `## N.` heading number inside a file, and
+the document map in §7 of `docs/00-overview.md` matches what is actually in `docs/`.
+
+Commits are signed off for the DCO (`git commit -s`). There is no CLA. Commit messages say what
+decision changed and why, not just which file moved.
+
+## Things worth knowing
+
+**This repository openly discloses that it was written with Claude.** The README says so in its own
+section. Do not remove that, and do not add hedging around it either. The argument for taking the
+work seriously is in the validation it describes, not in who typed it.
+
+**Competitor pricing, feature matrices, and business-model analysis are deliberately not in this
+repository.** `docs/research/evidence.md` keeps only technical citations: advisories, issue
+numbers, and documented behaviour. Sourced criticism is engineering. The same criticism without
+sources is something else, which is why the evidence file stays even though the market analysis
+went.
+
+**`docs/23-walkthroughs.md` is the test suite.** It traces scenarios end to end across every
+document they touch, looking for the step where no document is holding the ball. Nine defects came
+out of the first seven traces. When a change touches more than one document, add or update a trace.

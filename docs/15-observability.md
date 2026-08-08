@@ -60,6 +60,57 @@ challenged and is standard practice everywhere else.
 
 Same principle as `14-streams.md` §3, applied where it is most expensive to violate.
 
+### A gap is a claim about knowledge, not about the workload
+
+> Findings 10 and 12 of `23-walkthroughs.md`.
+
+The paragraph above is written from the control plane's side, where a gap means *no samples
+arrived*. The agent's side is different: it kept measuring from kernel counters the whole time,
+because a node that loses its uplink has not lost its cgroups. **A gap in delivery is not a gap in
+measurement**, and treating the first as the second discards consumption that was measured, which
+is the interpolation error inverted.
+
+So a gap carries the same identity as any other record, `(workload, resource, interval_start)`, and
+a real sample for that interval **supersedes it**. The control plane writes a gap when it stops
+hearing, and retracts it when it hears. The retraction is itself dated and visible, because a
+number that changed is a thing a host may have to explain.
+
+There is exactly one case where a gap is a statement about the workload rather than about the
+control plane, and it is the case the agent creates deliberately:
+
+**The agent's metering buffer is bounded, and the bound is declared.** `14-streams.md` §3 bounds
+the console buffer and says what a drop looks like; metering, which is the one stream with
+financial consequence, gets the same treatment rather than an assumption that the buffer is large
+enough. Exhausting it writes a gap with the cause `buffer exhausted`, which no later delivery can
+supersede because there is nothing to deliver. An operator who does not want that gap raises the
+bound, and the trade is stated: local disk against how long a node may be partitioned before its
+meter has holes in it.
+
+### Periods close, or the numbers never stop moving
+
+> Finding 11 of `23-walkthroughs.md`.
+
+K-12 keeps Korpis out of billing and that is still right. It does not excuse handing a billing
+system a series with no notion of finality, which is a moving target rather than an input.
+
+```
+MeteringPeriod
+  boundary        the period's own start and end
+  lateness_window Duration     how long after the end a sample may still revise it
+  state           open | closing | closed
+  closed_at       Timestamp
+```
+
+A sample arriving inside the lateness window revises an open period. A sample arriving after it is
+recorded in the current period as a **dated adjustment naming the interval it belongs to**, never
+as a silent edit of a closed one. A host that has already invoiced can therefore reconcile, and a
+host that has not can wait for `closed`.
+
+The lateness window is the same kind of number as a token lifetime in §6 of `08-identity.md`: it
+bounds how long the past can change, it is stated rather than convenient, and an operator picks it
+against a real trade. A long window tolerates partitioned nodes and delays every invoice. A short
+one bills on time and sends more adjustments.
+
 ### Idempotent by construction
 
 A sample's identity is `(workload, resource, interval_start)`. Re-delivery after a network failure
@@ -161,6 +212,19 @@ so that either can consume it.
 server; a healthy Minecraft server answers a query on its port. Health checks are declared per
 workload and defined per tier in §5 of `04-runtimes.md`, and it is health (not process liveness)
 that generates events.
+
+---
+
+### Degraded dependencies are events
+
+> Finding 23 of `23-walkthroughs.md`.
+
+A provider extension that fails trips its circuit breaker and its dependents say so (§5 of
+`16-extensions.md`). A provider that is merely **slow** produces no error anywhere while consuming
+the fleet's reconciliation capacity, so it needs an event of its own: `provider_degraded`, carrying
+the provider, its measured latency, and what is queued behind it.
+
+The operator whose creates got slow this morning should not have to infer the cause from a graph.
 
 ---
 

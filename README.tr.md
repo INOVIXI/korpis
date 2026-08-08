@@ -1,4 +1,4 @@
-<!-- Translation of README.md at c7685f0. Update this hash when you re-sync. -->
+<!-- Translation of README.md at 8b06f7b. Update this hash when you re-sync. -->
 
 **Türkçe** · [English](./README.md)
 
@@ -65,7 +65,7 @@ Sonrası, gerçekten neyi merak ettiğine bağlı:
 |---|---|
 | Model tutarlı mı? | [`01-model.md`](./docs/01-model.md) · [`02-architecture.md`](./docs/02-architecture.md) · [`03-state.md`](./docs/03-state.md) |
 | Güvenli mi? | [`17-security.md`](./docs/17-security.md) · [`04-runtimes.md`](./docs/04-runtimes.md) · [`08-identity.md`](./docs/08-identity.md) |
-| **Gerçekle temasa dayanıyor mu?** | [`23-walkthroughs.md`](./docs/23-walkthroughs.md): uçtan uca izlenen yedi senaryo ve bulduğu dokuz kusur |
+| **Gerçekle temasa dayanıyor mu?** | [`23-walkthroughs.md`](./docs/23-walkthroughs.md): uçtan uca izlenen on dört senaryo ve bulduğu yirmi üç kusur |
 | Çalıştırabilir miyim? | [`18-operations.md`](./docs/18-operations.md) |
 | Üstüne bir şey inşa edebilir miyim? | [`10-api.md`](./docs/10-api.md) · [`16-extensions.md`](./docs/16-extensions.md) · [`09-recipes.md`](./docs/09-recipes.md) |
 | Önce ne yapılacak? | [`20-roadmap.md`](./docs/20-roadmap.md) |
@@ -100,11 +100,12 @@ okumaya değer olması için fiilen ne yapıldığı:
   davranışına dayanır; hepsi [`docs/research/evidence.md`](./docs/research/evidence.md) içinde
   güven etiketleriyle toplandı. SEO içeriği çıkan kaynaklar öyle işaretlendi ve hiçbir şeye dayanak
   yapılmadı.
-- **Tasarıma kasıtlı olarak saldırıldı.** [`23-walkthroughs.md`](./docs/23-walkthroughs.md) yedi
+- **Tasarıma kasıtlı olarak saldırıldı.** [`23-walkthroughs.md`](./docs/23-walkthroughs.md) on dört
   somut senaryoyu dokundukları her katman boyunca izler ve özellikle hiçbir dokümanın topu
-  tutmadığı adımı arar. Dokuz kusur buldu: bir kota yarışı, sessizce göç edemeyen bir konsol ve
-  geri yüklemeden sonra dirilebilen iptal edilmiş yetki de bunların arasında. Dokuzu da düzeltildi
-  ve inceleme dokümanı onları sessizce yamamak yerine kayda geçirdi.
+  tutmadığı adımı arar. Yirmi üç kusur buldu: bir kota yarışı, geri yüklemeden sonra dirilebilen
+  iptal edilmiş yetki, her gözlem sağlıklı derken trafiği kesebilen bir kenar ve kaldırıldığında
+  hiçbir şeye yayılmayan bir sohbet rolü de bunların arasında. Hepsi düzeltildi ve inceleme
+  dokümanı onları sessizce yamamak yerine kayda geçirdi.
 - **Düzeltmeler görünür bırakıldı.** [`01-model.md`](./docs/01-model.md) §2, bu depodaki daha eski
   bir önerinin neden yanlış olduğunun kaydıdır. Hiçbir şey baştan belliymiş gibi sunulmuyor.
 

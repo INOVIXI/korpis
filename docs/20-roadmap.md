@@ -293,7 +293,7 @@ than architecture.
 | `docs/00-overview.md` … `docs/20-roadmap.md` | complete: the core twenty-one |
 | `docs/21-stack.md` | complete: languages, derived from where the boundary sits |
 | `docs/22-first-party.md` | complete: the recipe and extension set, and what it proves |
-| `docs/23-walkthroughs.md` | complete: seven traces, nine findings, all patched |
+| `docs/23-walkthroughs.md` | complete: fourteen traces, twenty-three findings, all patched |
 | `README.md`, `CONTRIBUTING.md`, `SECURITY.md` | complete: entry point, review policy, disclosure |
 | `LICENSE` | complete: the split, and what it means for a host |
 | `CLAUDE.md` | complete: the rules anyone editing these documents works under |

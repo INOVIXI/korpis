@@ -71,7 +71,7 @@ from their phone in the channel they were already in. That is the product.
 
 ## 3. Discord is a third party, and this is stated plainly
 
-§5.1 of `08-identity.md` establishes the boundary; it belongs in this document too, because this is
+§5.2 of `08-identity.md` establishes the boundary; it belongs in this document too, because this is
 where the consequences land.
 
 - A guild administrator can assign roles. If roles map to grants, **a guild administrator can grant

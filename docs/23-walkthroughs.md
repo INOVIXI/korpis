@@ -12,13 +12,21 @@ Designs do not fail inside a document. They fail **between** documents, where on
 handled in the storage layer" and the storage layer never heard about it. Per-document review
 cannot find those, because each document reads correctly on its own.
 
-So: seven concrete scenarios, traced end to end through every layer they touch. The output is not a
-tutorial. It is a **defect list**, and it is written to be adversarial, the goal of each trace is
-to find the step where nobody is holding the ball.
+So: fourteen concrete scenarios, traced end to end through every layer they touch. The output is
+not a tutorial. It is a **defect list**, and it is written to be adversarial, the goal of each
+trace is to find the step where nobody is holding the ball.
 
-**Seven traces produced nine findings, and all nine are now closed** and patched into the documents
-they belong to, the table in §8 says where each landed. Each cost a paragraph to fix here. Finding
-them in month nine would have cost a rewrite.
+**Fourteen traces produced twenty-three findings, and all of them are now closed** and patched into
+the documents they belong to, the table in §15 says where each landed. Each cost a paragraph to fix
+here. Finding them in month nine would have cost a rewrite.
+
+The first seven follow one workload through its life: created, migrated, orphaned by a dead node,
+delegated, attacked, restored, upgraded. That is one axis, and after they were written the coverage
+was measurably lopsided: `05-scheduling.md` was crossed seventeen times and `13-surface-cli.md` not
+once. The next seven were chosen by that measurement rather than by intuition, and they follow the
+things that surround a workload instead: the meter, the backup, the pipeline, the identity
+provider, the package, the edge, and the extension on the critical path. They produced more
+findings than the first seven did, which is what an untraced surface is supposed to do.
 
 ---
 
@@ -314,23 +322,410 @@ anything moves. This trace is the argument that it is not optional.
 
 ---
 
-## 8. Findings
+## 8. The month closes with six hours missing from the meter
 
-| # | Finding | Status | Patched into |
+The first seven traces followed one workload through its life. This one and the six after it follow
+the things that surround a workload: money, data, the pipeline, the identity provider, the package,
+the edge, and the extension on the critical path. Between them they cross the documents the first
+seven barely touched.
+
+**Trace**
+
+| # | Step | Governed by |
+|---|---|---|
+| 1 | 22:00 on the 30th: a node loses its uplink. Workloads keep running | `02-architecture.md` §4.6 |
+| 2 | The agent keeps sampling from kernel counters, locally | `15-observability.md` §2 |
+| 3 | The control plane stops receiving samples and reports the workload's state as `unknown` | P4, `03-state.md` §5 |
+| 4 | The control plane records a gap with the cause `node unreachable` | `15-observability.md` §2 |
+| 5 | 04:00 on the 1st: the link returns and the agent re-sends six hours of buffered samples | `15-observability.md` §2 |
+| 6 | Samples are idempotent by `(workload, resource, interval_start)`, so re-delivery overwrites | `15-observability.md` §2 |
+| 7 | The host's billing system reads the month that closed at 00:00 on the 1st | K-12, out of scope by design |
+
+**FINDING 10: A gap and a late sample are two answers to one question. `CONFIRMED`**
+
+Step 4 writes a gap. Step 5 delivers real measurements for the same intervals. Both are now in the
+series and the document says only that samples are idempotent among themselves; it never says a gap
+shares that keyspace.
+
+The distinction the design missed is that **a gap in delivery is not a gap in measurement.** The
+control plane knows one thing (nothing arrived) and the agent knows another (everything was
+measured). Writing the first as though it were the second is exactly the interpolation error in
+reverse: instead of inventing consumption that was never measured, it discards consumption that
+was.
+
+Patched into `15-observability.md` §2: a gap carries `(workload, resource, interval_start)` like
+any other record and is superseded by a real sample for the same interval. A gap is a **claim about
+the control plane's knowledge**, not a claim about the workload, and it is retracted when knowledge
+arrives.
+
+**FINDING 11: No metering period is ever closed. `CONFIRMED`**
+
+Step 7 has no defined input. The billing system reads "the month", but nothing in Korpis says when
+a month stops changing. Step 5 mutates intervals that a host may already have invoiced, and a
+sample that arrives four days late mutates them again.
+
+This is the same class of error as Finding 1. There, quota was checked without being held; here, a
+period is read without being closed. In both cases the missing thing is a commitment point.
+
+K-12 keeps Korpis out of billing, and that is still right, but a metering series with no notion of
+finality is not a usable input to a billing system, it is a moving target. Korpis does not have to
+issue invoices to owe its consumers a stated point after which numbers do not change.
+
+Patched into `15-observability.md` §2: a `MeteringPeriod` closes on a declared boundary and a
+declared lateness window. Samples arriving inside the window revise an open period; samples
+arriving after it land in the next period as a dated adjustment, never as a silent edit of a closed
+one.
+
+**FINDING 12: The agent's metering buffer has no stated bound. `CONFIRMED`**
+
+Step 2 assumes the agent can hold six hours. Nothing says it can hold six, or sixty, or what
+happens at the limit. `14-streams.md` §3 bounds the console buffer explicitly and says what is
+dropped and how the drop is marked; metering, which is the one stream with financial consequence,
+has no such statement.
+
+The absence is visible precisely because the neighbouring document does it properly.
+
+Patched into `15-observability.md` §2: the buffer is bounded, the bound is declared, and exhausting
+it produces a real gap with the cause `buffer exhausted`, which is the one case where a gap is a
+statement about the workload and not only about the control plane's knowledge.
+
+---
+
+## 9. A customer restores one file from forty days ago
+
+**Trace**
+
+| # | Step | Governed by |
+|---|---|---|
+| 1 | The customer opens a snapshot from forty days back and browses its manifest | `06-storage.md` §5.4 |
+| 2 | The repository is scoped to their organization; dedup scope is the repository | `06-storage.md` §5.3 |
+| 3 | They select one file; only the chunks it needs are fetched | `06-storage.md` §5.4 |
+| 4 | Chunks decrypt client-side against a key held outside the repository | `06-storage.md` §5.3 |
+| 5 | The read is an `Effect` and appears in the audit log | `15-observability.md` §4 |
+| 6 | Restore lands in a **new** volume, which is the default presentation | `06-storage.md` §5.4 |
+
+**FINDING 13: Browsing a manifest and reading a file are one grant and two disclosures.
+`CONFIRMED`**
+
+Step 1 reads the manifest. Step 3 reads content. `08-identity.md` §7 gates *backup contents* behind
+an explicit grant, and the manifest is not contents; it is the tree. A support engineer holding
+enough authority to help someone find a file can therefore enumerate every path, every filename and
+every size in the volume, forty days of them, without holding the grant that gates a single byte.
+
+For a game server the file tree is close to harmless. For a database volume, a mail spool, or a
+customer's uploads directory, the tree is most of the disclosure. The design gated the expensive
+half and left the informative half open.
+
+Patched into `08-identity.md` §7 and `06-storage.md` §5.4: `backup.browse` and `backup.read` are
+separate actions, browse is the weaker one, and neither implies the other. Both are audited as
+sensitive reads.
+
+**FINDING 14: A cross-tenant dedup scope is an operator decision, and the model does not say which
+operator. `CONFIRMED`**
+
+§5.3 is precise about the risk: a shared repository is a confirmation-of-file oracle, so the
+default scope is the organization and sharing is "an explicit operator decision documented with
+this consequence". Trace it through the reseller of §4 and the sentence stops working. In a
+delegated tree every parent is an operator of its children. A reseller can put forty customers in
+one repository and get a cheaper storage bill, and each customer can then test whether any other
+customer holds a given file.
+
+The decision is legitimate. What is missing is that the party who bears the consequence is not the
+party who makes it, and Korpis knows which party is which.
+
+This is Finding 7 again in a different subsystem, and the answer is the same shape: direction of
+exposure decides who decides. Patched into `06-storage.md` §5.3: widening a dedup scope beyond one
+organization requires the authority of the owner of every organization it will span, the same rule
+§4.1 of `16-extensions.md` applies to providers, and the scope is visible to every tenant inside it
+rather than being a fact about their data they cannot see.
+
+### The same trace, run against Korpis' own backup
+
+`18-operations.md` §6 separates tenant data from Korpis itself and lists what must be backed up.
+Run steps 1 to 6 against that list and two things fall out.
+
+**FINDING 15: Korpis' own backup can be stored in Korpis. `CONFIRMED`**
+
+Nothing forbids putting the Postgres dump and the signing keys into a `Repository`, which is the
+obvious thing to do because it is the backup system already in front of the operator. It is
+client-side encrypted against a key whose reference lives in the database being backed up, so the
+restore path needs the thing it is restoring.
+
+Patched into `18-operations.md` §6: the control plane's own backup target is declared outside the
+system it protects, the requirement is stated in the install preflight, and the encryption key for
+it is material the operator holds, not a reference the database resolves.
+
+**FINDING 16: "Rotate the signing key" does not say which key. `CONFIRMED`**
+
+Restore step 2 rotates the key that capability tokens verify against. §3 of `18-operations.md`
+enrolls a node by handing it "a per-node key pinned to the control plane's certificate". If those
+are one key, disaster recovery ends with a fleet that cannot authenticate and an operator
+re-enrolling every node by hand during the incident. If they are two, the restore is fine and
+nobody wrote it down.
+
+They should be two, and the reason is the same one that separated them everywhere else in this
+design: node identity and delegated authority have different lifetimes and different revocation
+stories. Patched into `18-operations.md` §6 and `08-identity.md` §6: the grant signing key and the
+node identity certificate are distinct, restore rotates the first and preserves the second, and the
+restore runbook of §8 says so in the step where an operator would otherwise find out.
+
+---
+
+## 10. The fix at 03:00, and the pipeline that runs at 09:00
+
+**Trace**
+
+| # | Step | Governed by |
+|---|---|---|
+| 1 | A workload is OOM-killing under load at 03:00. It belongs to a declared set, mode `advisory` | `13-surface-cli.md` §6 |
+| 2 | An on-call operator raises its memory limit through the panel. The change is an ordinary `Intent` | `03-state.md` §3 |
+| 3 | The set is marked **drifted**; the drift shows in the panel and in `korpis status` | `13-surface-cli.md` §6 |
+| 4 | Admission holds quota against the new figure at the moment of the change | `05-scheduling.md` §5.1 |
+| 5 | 09:00: CI runs `korpis apply -f servers/ --set community-servers` under a scoped token | `13-surface-cli.md` §7 |
+| 6 | The Plan shows the drifted object as a change to be reconciled or adopted | `13-surface-cli.md` §6 |
+
+**FINDING 17: A drifted intent makes declared and enforced differ, and quota holds only one of
+them. `CONFIRMED`**
+
+Step 4 is correct in isolation: quota consumption is written in the same transaction as the intent
+(§5.1, Finding 1's patch). But `advisory` mode means the *declared* file still says 4 Gi while the
+*enforced* cgroup says 8 Gi, and the drift can persist for weeks because that is what advisory is
+for.
+
+Which number is the tenant's quota holding? If the declared one, the organization is over its
+guarantee and nothing says so. If the enforced one, the file is not the source of truth for quota
+and a `plan` that shows no change to memory is nevertheless showing a quota that will move.
+
+The design chose `advisory` deliberately and correctly. It did not notice that advisory drift makes
+the two numbers a system was built to keep identical diverge on purpose.
+
+Patched into `05-scheduling.md` §5.1: quota is held against the **enforced** value, always, because
+quota is a statement about capacity and capacity is what the kernel is actually granting. A drifted
+set therefore shows the quota delta in `korpis status` alongside the drift, so the 03:00 fix that
+quietly consumed a reseller's headroom is visible the same morning rather than at the end of the
+month.
+
+**FINDING 18: A non-interactive apply meets a drifted object and has no defined outcome.
+`CONFIRMED`**
+
+Step 6 says the Plan shows the change "to be reconciled or adopted". Adoption means editing the
+repository, which a CI runner cannot do and should not do. Reconciliation means discarding the
+overnight fix, which is precisely what `advisory` exists to prevent. §7 calls CI the good case for
+a scoped token and never says what CI does when it arrives at this Plan.
+
+Three behaviours are defensible and the document picks none, which means implementations will pick
+different ones and operators will learn which by being surprised.
+
+Patched into `13-surface-cli.md` §6: an `advisory` set with drift **fails the apply and applies
+nothing**, naming each drifted object and the `Effect` that caused the drift, and `--accept-drift`
+proceeds while leaving the drifted objects untouched. A pipeline that goes red at 09:00 because a
+human fixed something at 03:00 is the correct outcome: the fix survives, and the disagreement
+between the file and reality is escalated to a person instead of being resolved by whichever ran
+last.
+
+---
+
+## 11. The moderator loses the role
+
+**Trace**
+
+| # | Step | Governed by |
+|---|---|---|
+| 1 | A grant names *the `@moderator` role in guild 456* as its subject | `08-identity.md` §5 |
+| 2 | A moderator uses it, and issues an attenuated child grant to a helper: restart one server, 7 days | `08-identity.md` §3.2 |
+| 3 | They also open a console; a 120-second capability token is issued and renewed | `08-identity.md` §6 |
+| 4 | They also create a share link, valid 24 hours, token in the fragment | `08-identity.md` §6.1 |
+| 5 | The guild owner removes them from `@moderator` | Discord, outside Korpis |
+| 6 | §5 says losing the role removes the authority with no deprovisioning step | `08-identity.md` §5 |
+
+**FINDING 19: Losing an external role produces no event, so nothing cascades. `CONFIRMED`**
+
+Step 6 is true of exactly one of steps 2, 3 and 4. The console token stops renewing within 120
+seconds, which is the bound §6 promises and it holds.
+
+The other two do not. §3.5 makes revocation cascade to the entire subtree, and that machinery runs
+when a grant is revoked. Nothing was revoked here. Discord does not notify Korpis that a role
+membership ended; the role assignment simply stops appearing in the next signed interaction, and if
+that person never interacts again, Korpis never observes anything at all. So the helper's seven-day
+child grant and the twenty-four-hour share link both keep working, issued by an authority that no
+longer exists, and the audit trail shows a chain rooted in a subject who cannot use it.
+
+"No deprovisioning step" was written as a feature and it is one. It is also the reason there is no
+event, and the design read one half of that and not the other.
+
+Patched into `08-identity.md` §5 and §3.5: an `ExternalIdentity` binding is **re-verified on a
+declared interval**, not only when its holder happens to interact, and a binding that fails
+re-verification enters `unverified`, which suspends every grant rooted in it and cascades exactly
+as revocation does. Suspension rather than revocation because an identity provider being
+unreachable must not silently destroy a delegation tree; `unverified` is visible, dated, and
+reversible, and it fails closed for authority while failing loudly for the operator. The
+re-verification interval is the honest analogue of token lifetime: it is the bound on how long
+authority outlives its source, it is stated, and it is configurable rather than convenient.
+
+---
+
+## 12. A recipe install fails at step four of six
+
+**Trace**
+
+| # | Step | Governed by |
+|---|---|---|
+| 1 | An `Intent` names a recipe by digest, resolved once through the lockfile | `09-recipes.md` §8 |
+| 2 | The Plan contains a step: run the recipe's install | `05-scheduling.md` §3.1 |
+| 3 | The install DSL runs six steps: fetch, verify, extract, `steam.app`, template, chmod | `09-recipes.md` §4 |
+| 4 | Step four calls an extension-provided step provider, which is circuit-broken | `16-extensions.md` §5 |
+| 5 | The Plan step fails. The workload's state is `partial`, with the failed step attached | `05-scheduling.md` §3.1 |
+| 6 | Resources created by completed steps are retained and named in the observation | `05-scheduling.md` §3.1 |
+| 7 | The provider recovers; the plan resumes from the last completed step | `05-scheduling.md` §3.1 |
+
+**FINDING 20: The install DSL's steps and a Plan's steps are different granularities, and the
+resumability guarantee stops at the boundary. `CONFIRMED`**
+
+Step 7 resumes from the last completed **Plan** step, and the whole install is one of those. So a
+resume re-runs all six DSL steps, including a forty-gigabyte SteamCMD fetch that had already
+succeeded, and the guarantee of §3.1 that a failed plan is "resumable, not restarted" is true of
+the Plan and false of the thing the operator is actually waiting on.
+
+Step 6 makes it worse rather than better. The partial install is retained, so the re-run of DSL
+steps one to three is now operating on a directory that already has content, and §3.1's idempotence
+guarantee was written for Plan steps, not for install verbs. `extract` over an existing tree and
+`template` over an already-rendered file are the two most obvious ways to produce a workload that
+starts and is subtly wrong.
+
+Patched into `09-recipes.md` §4 and `05-scheduling.md` §3.1: install steps carry the same three
+guarantees as Plan steps, ordered, individually idempotent, and resumable from the last completed
+one, with progress recorded durably per install rather than per plan. The DSL's verbs are a closed
+set precisely so that each can state its idempotence, which is a property this design already
+needed and had only asserted one level up.
+
+---
+
+## 13. The edge fails, not the node
+
+**Trace**
+
+| # | Step | Governed by |
+|---|---|---|
+| 1 | Two hundred workloads are exposed through one `stable` address on an edge | `07-networking.md` §3.1 |
+| 2 | Thirty of them are hibernated and wake on connection | `22-first-party.md` §6 |
+| 3 | The edge's forwarding plane stops passing traffic. Its host is up and its agent is healthy | `18-operations.md` §5 |
+| 4 | Every node holding a workload is up, holds a valid lease, and reports `running` | `05-scheduling.md` §7 |
+| 5 | The control plane observes nothing wrong, because nothing it observes is wrong | P4, `03-state.md` §5 |
+
+**FINDING 21: The edge is the only component in the design that holds no lease. `CONFIRMED`**
+
+Every other authority in Korpis is fenced. Agents hold leases with epochs, the control plane fences
+on restore, migration cuts over at one instant under a lease. The edge forwards traffic for two
+hundred workloads and holds nothing, so there is no mechanism by which a half-failed edge can be
+detected as failed, and no mechanism by which a replacement can know the old one has stopped.
+
+§11.2 of `07-networking.md` admitted the shape of this honestly: `stable` trades Pterodactyl's
+distributed failure mode for a concentrated one. It did not follow the admission through to the
+consequence, which is that the concentrated component is the one component with no health contract.
+
+Step 5 is the part that should have been caught earlier. Every observation in the system is correct
+and the service is down, which is the exact failure P4 was written to prevent, occurring in the one
+place P4 was never applied.
+
+Patched into `07-networking.md` §3.1 and `18-operations.md` §5: an edge holds a lease with an epoch
+like any other data-plane component, and its liveness is **measured through the forwarding path**
+rather than from the health of the process that owns it. Failover advances the epoch, and the
+detection interval is declared, because an operator choosing a concentrated failure mode is
+entitled to know how long the concentration lasts.
+
+**FINDING 22: A hibernated workload's wake trigger lives in the failed component. `PLAUSIBLE`**
+
+Step 2 crossed the same boundary and lands differently. Waking on connection requires something to
+observe the connection, and that something is the edge. With the edge half-failed, thirty workloads
+sit in `hibernated`, which is an accurate state, while being unreachable, which nothing reports,
+because §6 of `22-first-party.md` deliberately never displays a hibernated workload as running and
+therefore never displays it as down either.
+
+Marked `PLAUSIBLE` rather than `CONFIRMED` because Finding 21's patch fixes the mechanism: an edge
+with a measured forwarding path fails visibly, and its dependents become `unsatisfiable` with the
+edge named. Recorded anyway, because it is the case that shows why the measurement has to be
+through the forwarding path and not from the process.
+
+---
+
+## 14. A provider answers, slowly
+
+**Trace**
+
+| # | Step | Governed by |
+|---|---|---|
+| 1 | A workload declares an `ingress` endpoint needing a DNS record | `07-networking.md` §3.2 |
+| 2 | The Plan's step calls the DNS provider extension, under a deadline | `16-extensions.md` §5 |
+| 3 | The provider answers at 90% of the deadline, every time, for every workload in the fleet | `16-extensions.md` §5 |
+| 4 | It never fails, so the circuit breaker never opens | `16-extensions.md` §5 |
+| 5 | Every create in the fleet now takes the deadline, and the reconciler's queue grows | `05-scheduling.md` §7 |
+
+**FINDING 23: The circuit breaker measures failure, and the failure mode is success. `CONFIRMED`**
+
+§5 is careful about the two obvious cases: a provider that is unreachable and a provider that fails
+consistently. Both are handled, and the reasoning for each is stated. Neither describes step 3,
+where the provider is available, correct, and slow enough to consume the fleet's throughput while
+producing no error to trip anything.
+
+This is the classic degraded-dependency shape and it is worth stating plainly: **a deadline bounds
+one call and says nothing about aggregate cost.** Two hundred calls at 90% of a five-second
+deadline is fifteen minutes of reconciler time that no document accounts for, spent on third-party
+code, with every observation reporting success.
+
+Patched into `16-extensions.md` §5: provider latency is measured and published per provider, the
+circuit breaker trips on sustained latency as well as on failure, and provider concurrency is
+bounded per provider rather than per call so that one slow dependency cannot occupy the fleet's
+reconciliation capacity. `15-observability.md` §5 gains the provider-degraded event, because the
+operator whose creates got slow this morning should not have to infer the cause from a graph.
+
+**One thing this trace did not find**, and it is worth recording because it was the suspicion that
+motivated the trace: the tenant boundary holds. A provider installed by one tenant is bounded by
+the scope of the grants it was installed with (§4.1 of `16-extensions.md`), so a slow
+tenant-installed provider degrades that tenant's own reconciliation and nobody else's. The finding
+above applies to providers installed at the operator level, which is the case §2 calls "core uses
+the same mechanism", and that is the price of having made core and extensions the same thing.
+
+---
+
+## 15. Findings
+
+| # | Finding | Trace | Patched into |
 |---|---|---|---|
-| 1 | Quota is checked without being held, concurrent creates overshoot | **patched** | `05-scheduling.md` §5.1 |
-| 2 | A single workload's Plan has no stated step atomicity | **patched** | `05-scheduling.md` §3.1 |
-| 3 | Streams do not migrate with their workload; offsets would break | **patched** | `05-scheduling.md` §8, `14-streams.md` §4 |
-| 4 | Console reader across cutover | correct, given 3 | none |
-| 5 | A `stable` address with no live workload has undefined behaviour | **patched** | `07-networking.md` §3.1 |
-| 6 | Quota inheritance says neither allocation nor usage, decides Bet 4 | **patched** | `05-scheduling.md` §5.1 |
-| 7 | Who approves an extension inside a delegated organization | **patched** | `16-extensions.md` §4.1 |
-| 8 | Egress enforced by the party being contained | **patched** | `17-security.md` §9.1 |
-| 9 | Capability tokens outlive a restored database, revoked grants resurrect | **patched** | `03-state.md` §7, `08-identity.md` §6, `18-operations.md` §6 |
+| 1 | Quota is checked without being held, concurrent creates overshoot | §1 | `05-scheduling.md` §5.1 |
+| 2 | A single workload's Plan has no stated step atomicity | §1 | `05-scheduling.md` §3.1 |
+| 3 | Streams do not migrate with their workload; offsets would break | §2 | `05-scheduling.md` §8, `14-streams.md` §4 |
+| 4 | Console reader across cutover | §2 | correct, given 3 |
+| 5 | A `stable` address with no live workload has undefined behaviour | §3 | `07-networking.md` §3.1 |
+| 6 | Quota inheritance says neither allocation nor usage, decides Bet 4 | §4 | `05-scheduling.md` §5.1 |
+| 7 | Who approves an extension inside a delegated organization | §4 | `16-extensions.md` §4.1 |
+| 8 | Egress enforced by the party being contained | §5 | `17-security.md` §9.1 |
+| 9 | Capability tokens outlive a restored database, revoked grants resurrect | §6 | `03-state.md` §7, `08-identity.md` §6, `18-operations.md` §6 |
+| 10 | A gap and a late sample are two records for one interval | §8 | `15-observability.md` §2 |
+| 11 | No metering period is ever closed, so an invoice has no defined input | §8 | `15-observability.md` §2 |
+| 12 | The agent's metering buffer has no stated bound | §8 | `15-observability.md` §2 |
+| 13 | Browsing a backup manifest is not gated like reading one | §9 | `08-identity.md` §7, `06-storage.md` §5.4 |
+| 14 | A cross-tenant dedup scope is decided by the party who does not bear it | §9 | `06-storage.md` §5.3 |
+| 15 | Korpis' own backup can be stored inside Korpis | §9 | `18-operations.md` §6 |
+| 16 | "Rotate the signing key" does not say which of the two keys | §9 | `18-operations.md` §6, `08-identity.md` §6 |
+| 17 | A drifted intent makes declared and enforced differ; quota holds one | §10 | `05-scheduling.md` §5.1 |
+| 18 | A non-interactive apply meeting drift has no defined outcome | §10 | `13-surface-cli.md` §6 |
+| 19 | Losing an external role produces no event, so nothing cascades | §11 | `08-identity.md` §3.5, §5 |
+| 20 | Install steps and Plan steps are different granularities | §12 | `09-recipes.md` §4, `05-scheduling.md` §3.1 |
+| 21 | The edge is the only component holding no lease | §13 | `07-networking.md` §3.1, `18-operations.md` §5 |
+| 22 | A hibernated workload's wake trigger lives in the edge | §13 | fixed by 21 |
+| 23 | The circuit breaker measures failure, and the failure mode is success | §14 | `16-extensions.md` §5, `15-observability.md` §5 |
 
-Findings 1, 6, and 9 are the ones that would have cost real money to discover late: an overshot
-quota is a support ticket, an unstated overcommit model is a reseller telling their customers
-something Korpis does not do, and a resurrected grant is a security incident with no audit trail.
+**What the second seven traces cost, and what they bought.** They took a paragraph each to write
+and produced fourteen findings, four of which (11, 16, 19, 21) are the kind that are discovered in
+production by a customer, an auditor, or an outage rather than by a maintainer.
 
-All three were found by the same method, following one concrete story across a boundary that two
-documents each believed the other was holding.
+Findings 1, 6, 9, 16, 19, and 21 are the ones that would have cost real money to discover late. An
+overshot quota is a support ticket. An unstated overcommit model is a reseller telling their
+customers something Korpis does not do. A resurrected grant is a security incident with no audit
+trail. Rotating the wrong key turns a recovery into a fleet-wide re-enrollment during the incident.
+An external role that is removed without cascading is authority nobody can see. An unfenced edge is
+two hundred workloads down while every observation reports healthy.
+
+All six were found by the same method, following one concrete story across a boundary that two
+documents each believed the other was holding. None of them is subtle in hindsight, which is the
+point: they were invisible per document and obvious per trace.

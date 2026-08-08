@@ -126,5 +126,11 @@ sources is something else, which is why the evidence file stays even though the 
 went.
 
 **`docs/23-walkthroughs.md` is the test suite.** It traces scenarios end to end across every
-document they touch, looking for the step where no document is holding the ball. Nine defects came
-out of the first seven traces. When a change touches more than one document, add or update a trace.
+document they touch, looking for the step where no document is holding the ball. Fourteen traces
+have produced twenty-three defects. When a change touches more than one document, add or update a
+trace.
+
+Pick the next trace by **measuring coverage, not by intuition**. Count how many times each document
+is cited by the existing traces; the second set of seven was chosen because `05-scheduling.md` had
+been crossed seventeen times and `13-surface-cli.md` not once, and it found more defects than the
+first set did.

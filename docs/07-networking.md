@@ -96,6 +96,37 @@ their server list.**
 This is the thing that makes migration ordinary rather than an event, and it is why
 `05-scheduling.md` could treat draining a node as routine.
 
+**An edge holds a lease, because everything else that forwards traffic does.**
+
+> Finding 21 of `23-walkthroughs.md`.
+
+Every other authority in this design is fenced. Agents hold leases with epochs, the control plane
+fences its own restore, migration cuts over at one instant under a lease. The edge forwards for
+hundreds of workloads and, as first designed, held nothing, which produced the one failure the
+whole system is built to make impossible: a forwarding plane that has stopped passing traffic on a
+host that is up, with an agent that is healthy, every node holding a valid lease and reporting
+`running`, and a control plane whose observations are all correct while the service is down.
+
+So:
+
+- **An edge holds a lease with an epoch**, like any other data-plane component. Failover advances
+  the epoch, which is what lets a replacement know the previous edge is no longer authoritative for
+  an address, rather than inferring it.
+- **Liveness is measured through the forwarding path, not from the process that owns it.** A
+  synthetic connection through the same path a player takes is the only measurement that
+  distinguishes "the edge process is running" from "the edge is forwarding". This is K-3 applied to
+  a component that had escaped it: what is displayed is what was observed, and what was being
+  observed was the wrong thing.
+- **The detection interval is declared.** An operator choosing `stable`, and with it the
+  concentrated failure mode §11.2 admits to, is entitled to a number for how long the concentration
+  lasts before it is noticed. §5 of `18-operations.md` carries the failover mechanisms; this is the
+  detection that has to precede any of them.
+
+Dependents of a failed edge become `unsatisfiable` with the edge named, the same treatment §7 of
+`05-scheduling.md` gives every other unsatisfiable condition, which is also what makes a hibernated
+workload behind a dead edge visible: its wake trigger lives in the edge, so an edge that fails
+silently would leave it in a state that is accurate and unreachable at once.
+
 **When there is nothing to forward to.**
 
 > Finding 5 of `23-walkthroughs.md`.

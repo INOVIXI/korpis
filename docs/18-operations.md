@@ -199,6 +199,13 @@ So an edge is never a single machine in any deployment that cares:
 | ECMP with equal-cost routes | sub-second, per-flow rehash | a router that speaks it |
 | BGP anycast | route withdrawal | an ASN, transit that permits it, real network operations |
 
+Every one of those mechanisms fails over an edge that is **known** to have failed, and knowing is
+the part that was missing: §3.1 of `07-networking.md` now gives an edge a lease with an epoch and
+measures its liveness **through the forwarding path** rather than from the health of the process.
+Failover advances the epoch. Without that, all three rows above answer a question nobody was
+asking, because a half-failed edge on a healthy host was not detected at all (Finding 21 of
+`23-walkthroughs.md`).
+
 Forwarding state is derivable from placements, so a replacement edge reconstructs it from the
 control plane rather than needing state replication, an edge holds no truth of its own. On one
 machine, the edge is that machine and the question does not arise; the single-machine constraint of
@@ -223,8 +230,34 @@ client-side encrypted, restorable to a new volume.
 | Must be backed up | Why |
 |---|---|
 | the Postgres database | all intents, grants, effects, placements |
-| the control plane's signing keys | grants and capability tokens verify against them |
+| the control plane's grant signing key | grants and capability tokens verify against it |
+| the node identity certificate | agents' per-node keys are pinned to it, and it is **not** rotated on restore |
 | the `max_issued_epoch` watermark | without it, restore cannot fence safely |
+
+**The backup lives outside the system it protects.**
+
+> Finding 15 of `23-walkthroughs.md`.
+
+Nothing above forbids writing that Postgres dump into a Korpis `Repository`, and it is the obvious
+thing to do, because that is the backup system already in front of the operator. It is also
+circular: the repository is client-side encrypted against a key whose reference lives in the
+database being backed up, so the restore path needs the thing it is restoring.
+
+So the control plane's own backup target is **declared outside Korpis**, the preflight of §2
+refuses an install that has not named one, and its encryption key is material the operator holds
+rather than a reference the database resolves. This is the one place in the design where "use our
+own primitives" is the wrong answer, and it is worth the exception because the alternative is
+discovering it during a disaster.
+
+**Which key is rotated, and which is not.**
+
+> Finding 16 of `23-walkthroughs.md`.
+
+Step 2 below rotates the **grant signing key**. It does not rotate the **node identity
+certificate** that §3 pins at enrollment. §6 of `08-identity.md` states the separation and the
+reason; the consequence for this section is that a restore ends with agents that reconnect, rather
+than with an operator re-enrolling every node by hand in the middle of the incident the restore was
+fixing.
 
 The restore procedure has **two** steps that cannot be skipped, and §7 of `03-state.md` makes both
 mandatory rather than documented. They are the same principle applied to the two kinds of authority

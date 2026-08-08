@@ -145,6 +145,33 @@ Neither mode ever silently loses a human's emergency fix. `advisory` is the defa
 03:00 fix is usually right, and a system that punishes people for fixing outages gets worked around
 within a month.
 
+### What a pipeline does when it arrives at drift
+
+> Finding 18 of `23-walkthroughs.md`.
+
+"Reconciled or adopted" describes a person at a terminal. §7 calls CI the good case for a scoped
+token, and a CI runner can do neither: adopting means editing the repository, which a pipeline
+should not do to itself, and reconciling means discarding the overnight fix, which is the thing
+`advisory` exists to prevent.
+
+Three behaviours are defensible and picking none means implementations pick differently and
+operators find out by being surprised. So:
+
+**An `advisory` set with drift fails the apply and applies nothing.** The failure names each
+drifted object and the `Effect` that caused the drift, with its author and timestamp.
+`--accept-drift` proceeds while leaving the drifted objects untouched, for the pipeline whose
+operator has decided the disagreement is known and tolerated.
+
+Failing the whole apply rather than skipping the drifted objects is deliberate: a partial apply
+against a set someone is actively editing by hand is how two sources of truth become three.
+
+A pipeline going red at 09:00 because a human fixed something at 03:00 is the correct outcome. The
+fix survives, nothing is reverted by a machine, and a disagreement between the file and reality is
+escalated to a person instead of being settled by whichever wrote last.
+
+`strict` is unchanged: it reconciles, and the discarded override is recorded as an `Effect` with
+its author, which is what makes choosing `strict` an informed decision rather than a lossy one.
+
 ---
 
 ## 7. Authority, and why CI is the good case

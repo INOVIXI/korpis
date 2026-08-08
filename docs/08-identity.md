@@ -135,11 +135,18 @@ issued ──use──▶ issued
    ├── expires_at reached ──▶ expired
    ├── max_uses reached ────▶ exhausted
    ├── revoked ─────────────▶ revoked  ⟶ cascades to entire subtree
-   └── parent revoked ──────▶ revoked
+   ├── parent revoked ──────▶ revoked
+   └── root binding unverified ▶ suspended ⟶ cascades, reversible (§5.1)
 ```
 
 Revocation cascades transitively and takes effect immediately in the control plane. The one place
 it is not instantaneous is a cached capability token at the edge, bounded and quantified in §6.
+
+`suspended` exists because one root of a grant tree is not a row in this database. A grant rooted
+in an `ExternalIdentity` depends on an assertion Korpis re-checks rather than owns, and §5.1 gives
+that re-check an interval and a cascade. Suspension is reversible and revocation is not, which is
+the right asymmetry: an identity provider having a bad afternoon should not destroy delegations
+that a human will have to rebuild by hand.
 
 ---
 
@@ -184,7 +191,45 @@ An `ExternalIdentity` is a first-class subject, so a grant can name *the `@moder
 Discord guild 456* directly. Nobody needs a Korpis account. Losing the role removes the authority
 with no deprovisioning step, because there was no provisioning step.
 
-### 5.1 The Discord trust boundary, stated plainly
+### 5.1 Losing a role removes authority only if something notices
+
+> Finding 19 of `23-walkthroughs.md`.
+
+"No deprovisioning step" is a feature and it is also the reason there is no event. Discord does not
+tell Korpis that a role membership ended; the role simply stops appearing in the next signed
+interaction, and if the person never interacts again, Korpis observes nothing at all. §3.5 makes
+revocation cascade to an entire subtree, and that machinery runs on a revocation. Nothing was
+revoked here.
+
+So the promise holds for exactly one of the three things a role holder can leave behind:
+
+| What they left | What removal of the role does today |
+|---|---|
+| a console session | dies within one token lifetime, 120s. **Correct** |
+| a child grant they issued to a helper, 7 days | keeps working. **Wrong** |
+| a share link, 24 hours | keeps working. **Wrong** |
+
+An external binding is therefore **re-verified on a declared interval**, not only when its holder
+happens to interact:
+
+```
+IdentityBinding
+  …
+  reverify_interval   Duration
+  state               verified | unverified
+  last_verified_at    Timestamp
+```
+
+A binding that fails re-verification enters `unverified`, which **suspends every grant rooted in it
+and cascades exactly as revocation does**. Suspension rather than revocation, because an identity
+provider being unreachable must not silently destroy a delegation tree: `unverified` is visible,
+dated, and reversible, and it fails closed for authority while failing loudly for the operator.
+
+`reverify_interval` is the honest analogue of token lifetime. It is the bound on how long authority
+outlives its source, it is stated rather than convenient, and it applies to OIDC and SAML equally,
+because a group claim in a token that was issued an hour ago is exactly the same problem.
+
+### 5.2 The Discord trust boundary, stated plainly
 
 When a Discord interaction arrives, it is signed by Discord (Ed25519) and its payload includes the
 member's roles in that guild. Korpis verifies the signature and takes the role list as fact.
@@ -210,7 +255,7 @@ flow from Discord roles with no friction, which is the whole point of Bet 1. Des
 require a stronger identity or an approval from one (`requires_approval_by`), which is what makes
 granting a chat role real authority defensible.
 
-### 5.2 OIDC and SAML
+### 5.3 OIDC and SAML
 
 Standard, and the same shape: an issuer plus a claim maps to an `ExternalIdentity`, grants are
 issued to it, group claims work exactly like chat roles including the same trust boundary. SSO is a
@@ -280,6 +325,23 @@ re-authenticates, because a control plane that cannot account for a grant must n
 This is also why token lifetimes being short is a structural decision rather than a tuning knob:
 the same number that bounds revocation latency bounds how long a restore's disruption lasts.
 
+**Two keys, and restore rotates only one.**
+
+> Finding 16 of `23-walkthroughs.md`.
+
+"Rotate the signing key" is ambiguous while there are two keys in this design with two different
+jobs, and the ambiguity decides whether disaster recovery ends with a working fleet:
+
+| Key | Signs | Rotated on restore |
+|---|---|---|
+| the **grant signing key** | capability tokens, verified offline by agents | **yes**, mandatorily |
+| the **node identity certificate** | the per-node key pinned at enrollment (§3 of `18-operations.md`) | **no** |
+
+They are separate because node identity and delegated authority have different lifetimes and
+different revocation stories, which is the same reasoning that separated every other authority in
+this design. Rotating both would end a recovery with an operator re-enrolling every node by hand,
+during the incident, which converts the outage the restore was fixing into a longer one.
+
 ### 6.1 The shareable link
 
 Bet 1's sharpest edge, and the operation RBAC cannot express:
@@ -328,6 +390,7 @@ platform makes that invisible.
 | Placement, node assignment | **yes** |
 | Console content | **no**, requires an explicit grant |
 | File contents | **no**, requires an explicit grant |
+| Backup manifest, the file tree without contents | **no**: requires `backup.browse`, and browse does not imply read (Finding 13 of `23-walkthroughs.md`) |
 | Backup contents | **no**, requires an explicit grant, and see §9.1 of `06-storage.md` on key custody |
 | Environment variables and secrets | **no**, requires an explicit grant |
 

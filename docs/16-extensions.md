@@ -153,6 +153,28 @@ Calling out is the direction that carries risk, so the contract is strict:
 - Providers are circuit-broken. A provider failing consistently is marked down, its dependents are
   marked `unsatisfiable` with the provider named, and it is retried on a backoff, instead of every
   reconciliation loop in the fleet queueing behind it.
+- **The breaker trips on latency as well as on failure**, and provider concurrency is bounded per
+  provider rather than per call.
+
+> Finding 23 of `23-walkthroughs.md`.
+
+The last point exists because the first three all describe a provider that is broken, and the
+expensive failure mode is a provider that works. A DNS provider answering correctly at ninety per
+cent of a five-second deadline, every time, for every workload in the fleet, produces no error to
+trip anything while consuming the reconciler's throughput. **A deadline bounds one call and says
+nothing about aggregate cost.**
+
+So latency is measured and published per provider, sustained latency trips the breaker the same way
+sustained failure does, and a bounded concurrency per provider means one slow dependency occupies a
+slice of reconciliation capacity rather than all of it. `15-observability.md` §5 carries the
+`provider_degraded` event, because the operator whose creates got slow this morning should not have
+to infer the cause from a graph.
+
+The tenant boundary already holds here and is worth naming: a provider installed by one tenant is
+bounded by the grants it was installed with (§4.1), so a slow tenant-installed provider degrades
+that tenant's own reconciliation and nobody else's. The fleet-wide case is a provider installed at
+the operator level, which is exactly what §2 means by core using the same mechanism, and it is the
+price of that decision rather than an accident.
 
 ### Actions and commands
 

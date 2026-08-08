@@ -210,6 +210,26 @@ data that is uninteresting. Across tenants it is a confirmation-of-file oracle. 
 repository scope is therefore the organization, and a shared cross-tenant repository is an explicit
 operator decision documented with this consequence.
 
+#### Widening the dedup scope is decided by the people inside it
+
+> Finding 14 of `23-walkthroughs.md`.
+
+"An explicit operator decision" is precise enough with one operator and ambiguous with a delegated
+tree, where every parent is an operator of its children. A reseller can put forty customers in one
+repository, get a cheaper storage bill, and hand each of those customers an oracle against the
+other thirty-nine. The decision is legitimate. The problem is that the party making it is not the
+party bearing it, and Korpis knows which is which.
+
+This is Finding 7 of `23-walkthroughs.md` in a different subsystem, and it takes the same answer:
+**direction of exposure decides who decides.**
+
+- A repository scoped to one organization is that organization's own decision.
+- Widening a scope to span organizations requires the authority of the owner of **every**
+  organization it will span, the same rule §4.1 of `16-extensions.md` applies to providers.
+- The scope is **visible to every tenant inside it**. A tenant whose backups deduplicate against
+  someone else's can see that this is true, because it is a fact about their data and they cannot
+  discover it any other way.
+
 **Pruning is an irreversible plan step** (§3.3 of `01-model.md`) and always requires approval.
 `min_retention` is a floor beneath which no policy, operator, or automation can prune, the defence
 against a misconfigured retention rule quietly destroying the history that a ransomware incident
@@ -228,6 +248,22 @@ would need.
 data destroys the current state, which is occasionally what someone wants and frequently a second
 disaster on top of the first. The safe operation is the prominent one; the destructive one is
 marked irreversible and requires approval.
+
+**Browsing a manifest is a separate action from reading a file.**
+
+> Finding 13 of `23-walkthroughs.md`.
+
+Step 1 of a single-file restore reads the manifest, which is the volume's tree: every path, every
+filename, every size, as of that snapshot. Step 3 reads bytes. `08-identity.md` §7 gated the second
+and left the first open, on the reasonable-sounding basis that a manifest is not contents.
+
+For a game server the tree is close to harmless. For a database volume, a mail spool, or a
+customer's uploads directory it is most of the disclosure, and a support engineer helping someone
+find a file should not thereby enumerate forty days of filenames.
+
+So `backup.browse` and `backup.read` are separate actions. Browse is the weaker one, neither
+implies the other, and both are recorded as sensitive reads in the audit log (§4 of
+`15-observability.md`).
 
 **Restores are verified.** A restore that completes without confirming the data is readable and the
 workload can start is not a restore, it is a hope. The verification is the same contract as

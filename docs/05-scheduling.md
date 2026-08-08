@@ -184,6 +184,21 @@ requirement; these are its mechanics:
 A plan that fails halfway is therefore a plan waiting to continue, which is what makes P9's
 "resumable, verifiable, reversible" true of ordinary workload creation and not only of migration.
 
+**The guarantee has to reach inside a step, not stop at its edge.**
+
+> Finding 20 of `23-walkthroughs.md`.
+
+"Run the recipe's install" is one Plan step and six install-DSL steps (§4 of `09-recipes.md`).
+Resuming from the last completed *Plan* step therefore re-runs a forty-gigabyte SteamCMD fetch that
+had already succeeded, and does it over a directory the retention rule above deliberately kept,
+which is how `extract` and `template` produce a workload that starts and is subtly wrong.
+
+So the three guarantees are stated at both granularities. Install steps are ordered, individually
+idempotent, and resumable from the last completed one, with progress recorded durably per install
+rather than per plan. The DSL's verbs are a closed set (§4 of `09-recipes.md`) precisely so that
+each one can state its own idempotence, which is a property this design already required and had
+only asserted one level up.
+
 ---
 
 ## 4. Runs: the history of `task` and `scheduled` workloads
@@ -298,6 +313,26 @@ figure.
 
 A quota that is checked without being held is advisory, and P4 forbids displaying an advisory limit
 as a limit.
+
+#### Quota holds the enforced value, not the declared one
+
+> Finding 17 of `23-walkthroughs.md`.
+
+The two are normally identical, which is why it took a trace to notice they are not always. §6 of
+`13-surface-cli.md` lets a declared set drift on purpose: someone raises a memory limit through the
+panel at 03:00 to stop an OOM loop, the set is marked drifted, and the change stands because
+`advisory` is the default and punishing people for fixing outages is how a tool gets worked around.
+
+For as long as that drift lasts, the file says 4 Gi and the cgroup says 8 Gi.
+
+**Quota is held against what the kernel is actually granting.** Quota is a statement about
+capacity, capacity is the thing being sold, and a reseller's headroom is consumed by the enforced
+number whatever a file elsewhere says. Holding the declared value instead would let a tenant exceed
+a guarantee by drifting, which is a quota bypass reachable from the panel.
+
+The consequence lands where an operator can act on it: a drifted set reports its **quota delta**
+alongside the drift in `korpis status`, so the 03:00 fix that quietly consumed a reseller's
+headroom is visible the same morning instead of at the end of the month.
 
 ### 5.2 Reservation and limit are different numbers
 

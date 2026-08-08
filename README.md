@@ -59,7 +59,7 @@ Then whichever of these you actually care about:
 |---|---|
 | Does the model hold together? | [`01-model.md`](./docs/01-model.md) · [`02-architecture.md`](./docs/02-architecture.md) · [`03-state.md`](./docs/03-state.md) |
 | Is it safe? | [`17-security.md`](./docs/17-security.md) · [`04-runtimes.md`](./docs/04-runtimes.md) · [`08-identity.md`](./docs/08-identity.md) |
-| **Does it survive contact with reality?** | [`23-walkthroughs.md`](./docs/23-walkthroughs.md): seven scenarios traced end to end, and the nine defects that found |
+| **Does it survive contact with reality?** | [`23-walkthroughs.md`](./docs/23-walkthroughs.md): fourteen scenarios traced end to end, and the twenty-three defects that found |
 | Could I run it? | [`18-operations.md`](./docs/18-operations.md) |
 | Could I build on it? | [`10-api.md`](./docs/10-api.md) · [`16-extensions.md`](./docs/16-extensions.md) · [`09-recipes.md`](./docs/09-recipes.md) |
 | What gets built first? | [`20-roadmap.md`](./docs/20-roadmap.md) |
@@ -94,10 +94,11 @@ actually done to make it worth reading:
   [`docs/research/evidence.md`](./docs/research/evidence.md) with confidence tags. Sources that
   turned out to be SEO content are marked as such and not relied on.
 - **The design was attacked on purpose.** [`23-walkthroughs.md`](./docs/23-walkthroughs.md) traces
-  seven concrete scenarios across every layer they touch, looking specifically for the step where
-  no document is holding the ball. It found nine defects, including a quota race, a console that
-  silently failed to migrate, and revoked authority that could resurrect after a restore. All nine
-  are fixed, and the walkthrough documents them rather than quietly patching them.
+  fourteen concrete scenarios across every layer they touch, looking specifically for the step
+  where no document is holding the ball. It found twenty-three defects, including a quota race,
+  revoked authority that could resurrect after a restore, an edge that could stop forwarding while
+  every observation reported healthy, and a chat role whose removal cascaded to nothing. All are
+  fixed, and the walkthrough documents them rather than quietly patching them.
 - **Corrections are left visible.** §2 of [`01-model.md`](./docs/01-model.md) is a record of an
   earlier proposal in this repository being wrong and why. Nothing is presented as having been
   obvious.

@@ -12,8 +12,9 @@ is a place it could be wrong.
 assumption it never states, that is worth an issue. Quote the section.
 
 **Find a failure mode the walkthroughs missed.** [`23-walkthroughs.md`](./docs/23-walkthroughs.md)
-traces seven scenarios end to end specifically to find seams between documents. It found nine.
-There are almost certainly more, and the eighth scenario nobody has traced is where they are.
+traces fourteen scenarios end to end specifically to find seams between documents. It found
+twenty-three. There are almost certainly more, and the fifteenth scenario nobody has traced is
+where they are.
 
 **Correct the evidence.** [`docs/research/evidence.md`](./docs/research/evidence.md) makes factual
 claims about deployed software. If one is wrong, out of date, or unfair, please say so. Accuracy

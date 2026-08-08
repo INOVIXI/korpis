@@ -304,4 +304,4 @@ Each is traceable to a specific published advisory, issue, or product behaviour.
 | `20-roadmap.md` | Build order and dependency graph |
 | `21-stack.md` | Implementation languages, and why they differ by component |
 | `22-first-party.md` | The first-party recipe and extension set, and what it proves |
-| `23-walkthroughs.md` | Seven end-to-end traces, and the nine defects they found |
+| `23-walkthroughs.md` | Fourteen end-to-end traces, and the twenty-three defects they found |

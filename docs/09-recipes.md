@@ -162,6 +162,31 @@ manager, the installer has historically been the *more* dangerous of the two.
 
 **A `fetch` without a hash is not a warning. It is a parse error.** The recipe does not load.
 
+### Every verb states its own idempotence
+
+> Finding 20 of `23-walkthroughs.md`.
+
+An install is one Plan step and several DSL steps, and §3.1 of `05-scheduling.md` guarantees
+resumability at the Plan's granularity. Left there, a provider outage during step four means
+re-running a forty-gigabyte fetch that had already succeeded, over a directory that the same
+section deliberately retained, which is how `extract` and `template` produce a workload that starts
+and is quietly wrong.
+
+The verb list being closed is what makes the fix cheap. Each verb declares what re-running it does:
+
+| Verb | Re-running it |
+|---|---|
+| `fetch` | no-op if the digest already matches on disk; refetch otherwise |
+| `verify` | pure, always safe |
+| `extract` | overwrites into the target tree, never merges into whatever was there |
+| `template` | renders from the source template every time, never edits its own output |
+| `chmod` | pure, always safe |
+| a provider step | the provider declares it, and a provider that cannot is refused at install |
+
+Install progress is recorded durably per install, not per plan, so a resume continues at the verb
+that failed. This is the property the escape hatch below depends on: a step provider is third-party
+code on the install path, and it will be the thing that fails.
+
 ### The escape hatch that does not reopen the hole
 
 Real installs sometimes need something a verb list cannot express. SteamCMD is the obvious case,

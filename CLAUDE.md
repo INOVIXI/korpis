@@ -89,6 +89,17 @@ is the single most common defect in this repo's history.
 **Line length under 100 characters.** Prefer prose to bullet fragments. Tables are for genuinely
 tabular material, not for prose that has been chopped up.
 
+## Translations
+
+`README.md` is English and is the source. `README.tr.md` is a translation of it, and its first line
+is an HTML comment naming the commit of `README.md` it was translated from. When you change
+`README.md`, either update the translation and that hash in the same commit, or say in the commit
+message that the translation is now behind.
+
+Only the README is translated. The documents in `docs/` are English and stay that way. The agent
+protocol, the rule names, and the model's nouns have to be defined in one language, or two
+translations drift apart silently and there is no way to tell which one is the specification.
+
 ## Before committing
 
 ```bash

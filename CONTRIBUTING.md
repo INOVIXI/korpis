@@ -30,8 +30,8 @@ be settled. Several are genuine forks in the road rather than details, and are m
 ## What to expect
 
 Every issue gets a response. §7 of [`19-governance.md`](./docs/19-governance.md) commits to that,
-and to the reason: an untriaged issue is a process failure, not a backlog item. "We are not going to
-do this, because X" is a fine outcome. Silence is not.
+and to the reason: an untriaged issue is a process failure, not a backlog item. "We are not going
+to do this, because X" is a fine outcome. Silence is not.
 
 Changes to the domain model, the protocol, the security boundary, the licence, or the governance
 rules go through a written proposal and an explicit decision. Everything else runs on lazy

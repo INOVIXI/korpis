@@ -1,3 +1,5 @@
+**English** · [Türkçe](./README.tr.md)
+
 # Korpis
 
 **A workload platform for machines you control. Design specification.**
